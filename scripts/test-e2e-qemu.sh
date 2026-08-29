@@ -36,9 +36,9 @@ target_release="${FEDORA_RELEASE:-44}"
 image_url="${FEDORA_CLOUD_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/${target_release}/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-${target_release}-1.7.aarch64.qcow2}"
 firmware_code=""
 accel="auto"
-memory="2048"
-smp="2"
-timeout_sec=900
+memory="4096"
+smp="4"
+timeout_sec=1200
 output_dir=""
 dry_run=0
 custom_image_url=0
@@ -139,31 +139,32 @@ find_uefi_firmware() {
 }
 
 detect_accelerator() {
-    if [[ "$accel" != "auto" ]]; then
-        return 0
-    fi
-
     local os arch
     os=$(uname -s)
     arch=$(uname -m)
 
-    if [[ "$os" == "Darwin" && "$arch" == "arm64" ]]; then
-        accel="hvf"
-    elif [[ "$os" == "Linux" && -r "/dev/kvm" && -w "/dev/kvm" && "$arch" == "aarch64" ]]; then
-        accel="kvm"
+    if [[ "$accel" == "auto" ]]; then
+        if [[ "$os" == "Darwin" && "$arch" == "arm64" ]]; then
+            accel="hvf"
+        elif [[ "$os" == "Linux" && -r "/dev/kvm" && -w "/dev/kvm" && "$arch" == "aarch64" ]]; then
+            accel="kvm"
+        else
+            accel="tcg,thread=multi"
+        fi
+    fi
+
+    if [[ "$accel" == "hvf" || "$accel" == "kvm" ]]; then
+        cpu_type="host"
+    elif [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
+        cpu_type="host"
     else
-        accel="tcg"
+        cpu_type="max"
     fi
 }
 
 qemu_cmd=$(find_qemu)
 find_uefi_firmware
 detect_accelerator
-
-cpu_type="cortex-a72"
-if [[ "$accel" == "hvf" || "$accel" == "kvm" ]]; then
-    cpu_type="host"
-fi
 
 work_dir=$(mktemp -d -t dragon-q8b-qemu-vm.XXXXXX)
 # shellcheck disable=SC2329
@@ -261,7 +262,8 @@ guest_script="$cidata_dir/run-e2e-guest.sh"
 cat > "$guest_script" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-exec > /dev/console 2>&1
+exec 1> >(tee -a /dev/ttyAMA0 /dev/console 2>/dev/null || true)
+exec 2>&1
 
 echo "========================================================"
 echo " Starting In-Guest Dragon Q8B E2E Validation"
@@ -297,7 +299,7 @@ if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
     
     if [[ -x "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" ]]; then
         echo "Running bootstrap-fedora-dragon-q8b.sh from repository..."
-        bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --copr "$copr_target"
+        bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --skip-dracut --copr "$copr_target"
     else
         echo "Installing dragon-q8b-support package via $dnf_cmd..."
         "$dnf_cmd" -y install dragon-q8b-support
@@ -329,6 +331,8 @@ chmod +x "$guest_script"
 
 cat > "$cidata_dir/user-data" <<EOF
 #cloud-config
+output:
+  all: '| tee -a /dev/ttyAMA0 /dev/console /var/log/cloud-init-output.log'
 ssh_pwauth: true
 disable_root: false
 chpasswd:
@@ -411,7 +415,7 @@ qemu_args=(
     -no-reboot
     -drive "if=pflash,format=raw,unit=0,file=$vm_code,readonly=on"
     -drive "if=pflash,format=raw,unit=1,file=$vm_vars"
-    -drive "file=$vm_disk,format=qcow2,if=virtio"
+    -drive "file=$vm_disk,format=qcow2,if=virtio,cache=unsafe"
     -drive "file=$cidata_iso,format=raw,if=virtio"
     -netdev "user,id=net0"
     -device "virtio-net-pci,netdev=net0"

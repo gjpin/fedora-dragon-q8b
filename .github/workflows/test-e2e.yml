@@ -18,14 +18,14 @@ on:
       timeout:
         description: Execution timeout in seconds
         required: false
-        default: '900'
+        default: '1200'
 
 permissions:
   contents: read
 
 jobs:
   e2e-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 60
     container: fedora:44
     env:

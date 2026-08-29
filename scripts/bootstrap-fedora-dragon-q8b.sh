@@ -10,6 +10,7 @@ Install Fedora and COPR support for a Radxa Dragon Q8B.
 Options:
   --copr OWNER/PROJECT       Override the production COPR repository
   --force                    Continue past board/release detection failures
+  --skip-dracut              Skip full initramfs regeneration (recommended for test VMs)
   --allow-unsigned-secure-boot
                              Continue when Secure Boot is enabled
   -h, --help                Show this help
@@ -24,6 +25,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$repo_root/config/dragon-q8b.env"
 
 force=0
+skip_dracut=0
 allow_unsigned_secure_boot=0
 copr_owner=${COPR_OWNER:-}
 copr_project=${COPR_PROJECT:-dragon-q8b}
@@ -38,6 +40,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --force) force=1; shift ;;
+        --skip-dracut) skip_dracut=1; shift ;;
         --allow-unsigned-secure-boot) allow_unsigned_secure_boot=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -124,7 +127,7 @@ fi
 if [[ -x /usr/libexec/dragon-q8b-thermal ]]; then
     /usr/libexec/dragon-q8b-thermal --apply-config || warn "could not apply thermal governor configuration"
 fi
-if command -v dracut >/dev/null 2>&1; then
+if [[ $skip_dracut -eq 0 ]] && command -v dracut >/dev/null 2>&1; then
     dracut --regenerate-all --force
 fi
 

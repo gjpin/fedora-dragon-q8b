@@ -321,7 +321,7 @@ if [[ $skip_dracut_build -eq 0 ]] && command -v dracut >/dev/null 2>&1; then
     test_initrd=$(mktemp -u /tmp/test-dracut-q8b.XXXXXX.img)
     target_kver=$(uname -r)
     if [[ -d "/lib/modules/$target_kver" ]]; then
-        if dracut --force --no-hostonly "$test_initrd" "$target_kver" >/dev/null 2>&1; then
+        if dracut --force --no-hostonly --no-compress "$test_initrd" "$target_kver" >/dev/null 2>&1; then
             log_ok "Dracut successfully generated test initramfs with Q8B policy ($test_initrd)"
             
             if command -v lsinitrd >/dev/null 2>&1; then
