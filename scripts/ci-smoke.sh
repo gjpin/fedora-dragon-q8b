@@ -64,23 +64,26 @@ dnf -y install \
 
 mkdir -p "$GITHUB_WORKSPACE"
 cp -a /src/. "$GITHUB_WORKSPACE/"
+chown -R 1001:1001 "$GITHUB_WORKSPACE"
 repo_root="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is unset}"
+git config --global --add safe.directory "$repo_root"
 git -C "$repo_root" rev-parse --show-toplevel
 if [[ "$skip_lfs" -eq 0 ]]; then
     git -C "$repo_root" lfs install --local
     git -C "$repo_root" lfs pull
 fi
 
-bash -n "$repo_root"/scripts/*.sh
-shellcheck "$repo_root"/scripts/*.sh \
-    "$repo_root"/packaging/boot/dragon-q8b-bt-address \
-    "$repo_root"/packaging/boot/dragon-q8b-refresh-boot
-bash "$repo_root/scripts/validate-vendor.sh"
-for spec in "$repo_root"/packaging/*/*.spec; do
+cd "$repo_root"
+bash -n scripts/*.sh packaging/boot/dragon-q8b-bt-address packaging/boot/dragon-q8b-refresh-boot
+shellcheck scripts/*.sh \
+    packaging/boot/dragon-q8b-bt-address \
+    packaging/boot/dragon-q8b-refresh-boot
+bash scripts/validate-vendor.sh
+for spec in packaging/*/*.spec; do
     rpmspec --parse "$spec" >/dev/null
 done
-bash "$repo_root/scripts/prepare-kernel-source.sh" --help >/dev/null
-bash "$repo_root/scripts/build-srpms.sh" --help >/dev/null
-test "$(wc -l < "$repo_root/config/armbian-sc8280xp-edge-patches.list")" -eq 35
+bash scripts/prepare-kernel-source.sh --help >/dev/null
+bash scripts/build-srpms.sh --help >/dev/null
+test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq 35
 echo "CI smoke test passed"
 EOF
