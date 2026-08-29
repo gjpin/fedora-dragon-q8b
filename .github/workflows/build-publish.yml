@@ -4,20 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - '.gitattributes'
       - 'config/**'
       - 'packaging/**'
-      - 'scripts/**'
       - 'vendor/**'
-      - '.github/workflows/build-publish.yml'
   pull_request:
     paths:
-      - '.gitattributes'
       - 'config/**'
       - 'packaging/**'
-      - 'scripts/**'
       - 'vendor/**'
-      - '.github/workflows/build-publish.yml'
   workflow_dispatch:
     inputs:
       packages:
