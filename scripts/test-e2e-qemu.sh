@@ -347,8 +347,8 @@ cat > "$cidata_dir/user-data" <<EOF
 #cloud-config
 output:
   all: '| tee -a /dev/console /var/log/cloud-init-output.log'
-ssh_genkey: false
-ssh_deletekeys: false
+bootcmd:
+  - ssh-keygen -A || true
 ssh_pwauth: true
 disable_root: false
 chpasswd:
