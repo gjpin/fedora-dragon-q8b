@@ -20,7 +20,7 @@ Requires:       usbutils
 Requires:       ethtool
 Requires:       iw
 Requires:       i2c-tools
-Requires:       gpiod
+Requires:       libgpiod-utils
 Requires:       alsa-utils
 Requires:       dragon-q8b-kernel
 Requires:       dragon-q8b-firmware
