@@ -463,6 +463,13 @@ start_time=$(date +%s)
 "${qemu_args[@]}" > "$console_log" 2>&1 &
 qemu_pid=$!
 
+# Stream console output live to workflow stdout
+tail_pid=""
+if command -v tail >/dev/null 2>&1; then
+    tail -n +1 -f "$console_log" 2>/dev/null &
+    tail_pid=$!
+fi
+
 # Monitor QEMU with timeout watchdog
 timed_out=0
 while kill -0 "$qemu_pid" 2>/dev/null; do
@@ -477,13 +484,13 @@ while kill -0 "$qemu_pid" 2>/dev/null; do
     sleep 2
 done
 
+if [[ -n "$tail_pid" ]]; then
+    kill "$tail_pid" 2>/dev/null || true
+fi
 wait "$qemu_pid" 2>/dev/null || true
 
 echo
 echo "QEMU VM execution ended."
-echo "--- QEMU Console Output Tail ---"
-tail -n 40 "$console_log" || true
-echo "--------------------------------"
 
 if [[ $timed_out -eq 1 ]]; then
     echo "=== DRAGON-Q8B E2E TEST: TIMED OUT ===" >&2
