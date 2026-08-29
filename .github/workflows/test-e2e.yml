@@ -36,7 +36,7 @@ jobs:
           dnf -y --disablerepo='*openh264*' install \
             bash coreutils git git-lfs curl grep sed awk \
             python3 dtc \
-            qemu-system-aarch64-core edk2-aarch64 genisoimage
+            qemu-system-aarch64-core edk2-aarch64 genisoimage qemu-img
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false

@@ -80,6 +80,10 @@ find_qemu() {
     local qemu_bin
     qemu_bin=$(command -v qemu-system-aarch64 || true)
     if [[ -z "$qemu_bin" ]]; then
+        if [[ $dry_run -eq 1 ]]; then
+            printf 'qemu-system-aarch64'
+            return 0
+        fi
         echo "qemu-system-aarch64 is required but was not found in PATH" >&2
         exit 1
     fi
@@ -124,6 +128,10 @@ find_uefi_firmware() {
     fi
 
     if [[ -z "$firmware_code" ]]; then
+        if [[ $dry_run -eq 1 ]]; then
+            firmware_code="/usr/share/edk2/aarch64/QEMU_EFI.fd"
+            return 0
+        fi
         echo "UEFI firmware for aarch64 (QEMU_EFI.fd or edk2-aarch64-code.fd) was not found." >&2
         echo "Install edk2-aarch64 (Fedora), qemu-efi-aarch64 (Ubuntu), or qemu via brew (macOS)." >&2
         exit 1
@@ -173,36 +181,51 @@ mkdir -p "$cache_dir"
 if [[ -z "$image_file" ]]; then
     cached_base="$cache_dir/$(basename "$image_url")"
     if [[ ! -f "$cached_base" ]]; then
-        echo "Downloading Fedora aarch64 base cloud image from $image_url..."
-        curl -fSL --retry 3 --retry-all-errors "$image_url" -o "$cached_base.tmp"
-        mv "$cached_base.tmp" "$cached_base"
+        if [[ $dry_run -eq 1 ]]; then
+            cached_base="$cache_dir/$(basename "$image_url")"
+        else
+            echo "Downloading Fedora aarch64 base cloud image from $image_url..."
+            curl -fSL --retry 3 --retry-all-errors "$image_url" -o "$cached_base.tmp"
+            mv "$cached_base.tmp" "$cached_base"
+        fi
     fi
     image_file="$cached_base"
 fi
 
-if [[ ! -f "$image_file" ]]; then
+if [[ $dry_run -eq 0 && ! -f "$image_file" ]]; then
     echo "Base image file not found: $image_file" >&2
     exit 1
 fi
 
-echo "Creating VM disk overlay from $image_file..."
 vm_disk="$work_dir/disk-overlay.qcow2"
-if command -v qemu-img >/dev/null 2>&1; then
-    qemu_img_cmd=$(command -v qemu-img)
-    base_format=$(qemu-img info "$image_file" 2>/dev/null | awk '/^file format:/ {print $3}' || true)
-    base_format=${base_format:-qcow2}
-    "$qemu_img_cmd" create -f qcow2 -b "$image_file" -F "$base_format" "$vm_disk" >/dev/null
-else
-    cp "$image_file" "$vm_disk"
+if [[ $dry_run -eq 0 ]]; then
+    echo "Creating VM disk overlay from $image_file..."
+    if command -v qemu-img >/dev/null 2>&1; then
+        qemu_img_cmd=$(command -v qemu-img)
+        base_format=$(qemu-img info "$image_file" 2>/dev/null | awk '/^file format:/ {print $3}' || true)
+        base_format=${base_format:-qcow2}
+        "$qemu_img_cmd" create -f qcow2 -b "$image_file" -F "$base_format" "$vm_disk" >/dev/null
+    else
+        cp "$image_file" "$vm_disk"
+    fi
 fi
 
 # -----------------------------------------------------------------------------
-# Prepare UEFI VARS
+# Prepare UEFI Firmware Code & VARS (Padded to 64MB for QEMU aarch64 virt pflash)
 # -----------------------------------------------------------------------------
-# Look for matching VARS template or create an empty VARS flash drive
+vm_code="$work_dir/vm-code.fd"
+if [[ $dry_run -eq 0 ]]; then
+    cp "$firmware_code" "$vm_code"
+    if command -v truncate >/dev/null 2>&1; then
+        truncate -s 64M "$vm_code"
+    else
+        dd if=/dev/null of="$vm_code" bs=1M seek=64 2>/dev/null || true
+    fi
+fi
+
 vars_template=""
 vars_dir=$(dirname "$firmware_code")
-for candidate in "$vars_dir/QEMU_VARS.fd" "$vars_dir/edk2-arm-vars.fd" "$vars_dir/AAVMF_VARS.fd"; do
+for candidate in "$vars_dir/QEMU_VARS.fd" "$vars_dir/edk2-arm-vars.fd" "$vars_dir/AAVMF_VARS.fd" "$vars_dir/edk2-aarch64-vars.fd"; do
     if [[ -f "$candidate" ]]; then
         vars_template="$candidate"
         break
@@ -210,11 +233,17 @@ for candidate in "$vars_dir/QEMU_VARS.fd" "$vars_dir/edk2-arm-vars.fd" "$vars_di
 done
 
 vm_vars="$work_dir/vm-vars.fd"
-if [[ -n "$vars_template" ]]; then
-    cp "$vars_template" "$vm_vars"
-else
-    # Create blank 64M vars file
-    truncate -s 64M "$vm_vars" 2>/dev/null || dd if=/dev/zero of="$vm_vars" bs=1M count=64 status=none
+if [[ $dry_run -eq 0 ]]; then
+    if [[ -n "$vars_template" && -f "$vars_template" ]]; then
+        cp "$vars_template" "$vm_vars"
+    else
+        : > "$vm_vars"
+    fi
+    if command -v truncate >/dev/null 2>&1; then
+        truncate -s 64M "$vm_vars"
+    else
+        dd if=/dev/null of="$vm_vars" bs=1M seek=64 2>/dev/null || true
+    fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -238,13 +267,14 @@ echo "========================================================"
 echo " Starting In-Guest Dragon Q8B E2E Validation"
 echo "========================================================"
 
-# Mount 9p repo share if available
-repo_mount="/repo"
-mkdir -p "$repo_mount"
-if mount -t 9p -o trans=virtio,version=9p2000.L repo "$repo_mount" 2>/dev/null; then
-    echo "Host repository mounted via 9p virtfs at $repo_mount"
-else
-    echo "9p virtfs mount not available; operating in standalone mode"
+# Mount 9p repo share if available, otherwise use embedded /root/repo
+repo_mount="/root/repo"
+mkdir -p /repo
+if mount -t 9p -o trans=virtio,version=9p2000.L repo /repo 2>/dev/null; then
+    echo "Host repository mounted via 9p virtfs at /repo"
+    repo_mount="/repo"
+elif [[ -d "/root/repo" ]]; then
+    echo "Using embedded repository scripts from /root/repo"
 fi
 
 # Install copr or local packages
@@ -263,7 +293,7 @@ if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
         "$dnf_cmd" -y install dnf-plugins-core >/dev/null 2>&1 || "$dnf_cmd" -y install dnf5-plugins || true
     fi
     
-    "$dnf_cmd" -y copr enable "$copr_target"
+    "$dnf_cmd" -y copr enable "$copr_target" || "$dnf_cmd" copr enable -y "$copr_target"
     
     if [[ -x "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" ]]; then
         echo "Running bootstrap-fedora-dragon-q8b.sh from repository..."
@@ -311,48 +341,59 @@ write_files:
     owner: root:root
     content: |
 $(sed 's/^/      /' "$guest_script")
+  - path: /root/repo/scripts/bootstrap-fedora-dragon-q8b.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+$(sed 's/^/      /' "$repo_root/scripts/bootstrap-fedora-dragon-q8b.sh")
+  - path: /root/repo/scripts/validate-e2e.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+$(sed 's/^/      /' "$repo_root/scripts/validate-e2e.sh")
+  - path: /root/repo/config/dragon-q8b.env
+    permissions: '0644'
+    owner: root:root
+    content: |
+$(sed 's/^/      /' "$repo_root/config/dragon-q8b.env")
 runcmd:
   - [ bash, /root/run-e2e-guest.sh ]
 EOF
 
 cidata_iso="$work_dir/cidata.iso"
-echo "Generating cloud-init seed drive ($cidata_iso)..."
+if [[ $dry_run -eq 0 ]]; then
+    echo "Generating cloud-init seed drive ($cidata_iso)..."
 
-create_iso_with_python() {
-    python3 - "$cidata_dir" "$cidata_iso" <<'PYEOF'
+    if command -v genisoimage >/dev/null 2>&1; then
+        genisoimage -output "$cidata_iso" -volid cidata -joliet -rock "$cidata_dir/user-data" "$cidata_dir/meta-data" >/dev/null 2>&1
+    elif command -v mkisofs >/dev/null 2>&1; then
+        mkisofs -output "$cidata_iso" -volid cidata -joliet -rock "$cidata_dir/user-data" "$cidata_dir/meta-data" >/dev/null 2>&1
+    elif command -v xorrisofs >/dev/null 2>&1; then
+        xorrisofs -output "$cidata_iso" -volid cidata -joliet -rock "$cidata_dir/user-data" "$cidata_dir/meta-data" >/dev/null 2>&1
+    elif command -v cloud-localds >/dev/null 2>&1; then
+        cloud-localds "$cidata_iso" "$cidata_dir/user-data" "$cidata_dir/meta-data"
+    else
+        python3 - "$cidata_dir" "$cidata_iso" <<'PYEOF'
 import sys
 import os
-import tarfile
+import shutil
 import subprocess
 
 src_dir = sys.argv[1]
 iso_out = sys.argv[2]
 
-# Try genisoimage, mkisofs, or xorriso if available
 for cmd in ['genisoimage', 'mkisofs', 'xorrisofs']:
-    if subprocess.call(['which', cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+    bin_path = shutil.which(cmd)
+    if bin_path:
         res = subprocess.call([
-            cmd, '-output', iso_out, '-volid', 'cidata', '-joliet', '-rock',
+            bin_path, '-output', iso_out, '-volid', 'cidata', '-joliet', '-rock',
             os.path.join(src_dir, 'user-data'), os.path.join(src_dir, 'meta-data')
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if res == 0:
             sys.exit(0)
 
-# If no iso command found, construct a FAT12/16 filesystem image via mtools or python
 sys.exit(1)
 PYEOF
-}
-
-if ! create_iso_with_python; then
-    if command -v cloud-localds >/dev/null 2>&1; then
-        cloud-localds "$cidata_iso" "$cidata_dir/user-data" "$cidata_dir/meta-data"
-    elif command -v genisoimage >/dev/null 2>&1; then
-        genisoimage -output "$cidata_iso" -volid cidata -joliet -rock "$cidata_dir/user-data" "$cidata_dir/meta-data" >/dev/null 2>&1
-    elif command -v mkisofs >/dev/null 2>&1; then
-        mkisofs -output "$cidata_iso" -volid cidata -joliet -rock "$cidata_dir/user-data" "$cidata_dir/meta-data" >/dev/null 2>&1
-    else
-        echo "Neither python genisoimage wrapper, cloud-localds, genisoimage, nor mkisofs found." >&2
-        exit 1
     fi
 fi
 
@@ -368,16 +409,19 @@ qemu_args=(
     -smp "$smp"
     -nographic
     -no-reboot
-    -drive "if=pflash,format=raw,unit=0,file=$firmware_code,readonly=on"
+    -drive "if=pflash,format=raw,unit=0,file=$vm_code,readonly=on"
     -drive "if=pflash,format=raw,unit=1,file=$vm_vars"
     -drive "file=$vm_disk,format=qcow2,if=virtio"
     -drive "file=$cidata_iso,format=raw,if=virtio"
-    -virtfs "local,path=$repo_root,mount_tag=repo,security_model=none,readonly=on"
     -netdev "user,id=net0"
     -device "virtio-net-pci,netdev=net0"
     -serial "stdio"
     -monitor "none"
 )
+
+if "$qemu_cmd" -help 2>/dev/null | grep -q -- '-virtfs'; then
+    qemu_args+=(-virtfs "local,path=$repo_root,mount_tag=repo,security_model=none,readonly=on")
+fi
 
 if [[ -n "$rpm_dir" && -d "$rpm_dir" ]]; then
     qemu_args+=(-virtfs "local,path=$rpm_dir,mount_tag=rpm-packages,security_model=none,readonly=on")
