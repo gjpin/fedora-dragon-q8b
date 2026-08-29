@@ -121,6 +121,9 @@ fi
 if [[ -x /usr/libexec/dragon-q8b-refresh-boot ]]; then
     /usr/libexec/dragon-q8b-refresh-boot || warn "could not update all Fedora boot entries"
 fi
+if [[ -x /usr/libexec/dragon-q8b-thermal ]]; then
+    /usr/libexec/dragon-q8b-thermal --apply-config || warn "could not apply thermal governor configuration"
+fi
 if command -v dracut >/dev/null 2>&1; then
     dracut --regenerate-all --force
 fi

@@ -21,6 +21,7 @@ board. Its relevant platform contract is:
 | Wi-Fi/Bluetooth | Qualcomm radio firmware and controller setup | Fedora firmware, `bluez`, and a deterministic locally-administered BT address via `dragon-q8b-bt.service` |
 | NPU / FastRPC | Hexagon DSP FastRPC runtime | Qualcomm open-source FastRPC libraries (`libcdsprpc`, `libadsprpc`), udev rules, and DSP library environment paths (`dragon-q8b-fastrpc`) |
 | AI Acceleration | Qualcomm QNN SDK & ONNX Runtime | Automated QNN synchronization service and timer (`dragon-q8b-qnn`), `onnxruntime-qnn` integration |
+| Thermal & Cooling | `rsetup` thermal governor modes (`step_wise`, `power_allocator`) | `dragon-q8b-thermal` utility (defaulting to `step_wise` for PWM fan cooling), `/etc/dragon-q8b/thermal.conf`, and persistent tmpfiles policy |
 
 Radxa's OS build is product/SoC oriented: it combines a board kernel, a
 firmware package, overlays, ALSA UCM, FastRPC runtime, and a UEFI boot configuration. Fedora

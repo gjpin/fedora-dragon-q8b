@@ -1,0 +1,71 @@
+name: Fedora Dragon Q8B QEMU E2E Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      copr_project:
+        description: Target COPR project to test (e.g. dragon-q8b-staging)
+        required: false
+        default: dragon-q8b-staging
+      copr_owner:
+        description: Target COPR owner (optional override; defaults to COPR_OWNER secret)
+        required: false
+        default: ''
+      fedora_release:
+        description: Fedora release version (e.g. 44)
+        required: false
+        default: '44'
+      timeout:
+        description: Execution timeout in seconds
+        required: false
+        default: '900'
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container: fedora:44
+    env:
+      FEDORA_RELEASE: ${{ inputs.fedora_release || '44' }}
+    steps:
+      - name: Install QEMU and test dependencies
+        run: |
+          dnf -y --disablerepo='*openh264*' install \
+            bash coreutils git git-lfs curl grep sed awk \
+            python3 dtc \
+            qemu-system-aarch64-core edk2-aarch64 genisoimage
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          fetch-depth: 0
+      - name: Run Fedora QEMU E2E validation against COPR
+        env:
+          COPR_OWNER_SECRET: ${{ secrets.COPR_OWNER }}
+          INPUT_COPR_OWNER: ${{ inputs.copr_owner }}
+          INPUT_COPR_PROJECT: ${{ inputs.copr_project }}
+          INPUT_TIMEOUT: ${{ inputs.timeout }}
+        run: |
+          owner="${INPUT_COPR_OWNER:-$COPR_OWNER_SECRET}"
+          project="${INPUT_COPR_PROJECT:-dragon-q8b-staging}"
+          if [[ -n "$owner" && "$project" != */* ]]; then
+            copr_target="$owner/$project"
+          else
+            copr_target="$project"
+          fi
+          echo "Executing E2E testing against COPR: $copr_target"
+          mkdir -p "$RUNNER_TEMP/qemu-e2e"
+          bash scripts/test-e2e-qemu.sh \
+            --copr "$copr_target" \
+            --release "$FEDORA_RELEASE" \
+            --output "$RUNNER_TEMP/qemu-e2e" \
+            --timeout "${INPUT_TIMEOUT:-900}"
+      - name: Upload QEMU E2E test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: qemu-e2e-logs-${{ github.run_id }}
+          path: ${{ runner.temp }}/qemu-e2e
+          if-no-files-found: ignore

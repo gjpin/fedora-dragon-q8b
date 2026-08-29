@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: Packages to build (auto, all, or comma/space-separated list)
+        description: Packages to build (auto, all, none, or comma/space-separated list)
         required: false
         default: auto
 
@@ -177,6 +177,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/qemu-e2e"
           bash scripts/test-e2e-qemu.sh \
             --copr "$COPR_OWNER/$staging_project" \
+            --release "$FEDORA_RELEASE" \
             --output "$RUNNER_TEMP/qemu-e2e" \
             --timeout 900
       - name: Upload QEMU E2E test logs

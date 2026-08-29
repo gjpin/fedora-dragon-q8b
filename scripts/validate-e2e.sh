@@ -511,6 +511,53 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Section 12: Thermal Governor & Cooling Management
+# -----------------------------------------------------------------------------
+echo
+echo "--- Section 12: Thermal Governor & Cooling Management ---"
+
+thermal_bin="/usr/libexec/dragon-q8b-thermal"
+if [[ ! -x "$thermal_bin" && -x "/usr/bin/dragon-q8b-thermal" ]]; then
+    thermal_bin="/usr/bin/dragon-q8b-thermal"
+fi
+
+if [[ -x "$thermal_bin" ]]; then
+    log_ok "Thermal management binary $thermal_bin is executable"
+
+    if "$thermal_bin" --help >/dev/null 2>&1; then
+        log_ok "Thermal tool responds to --help"
+    else
+        log_fail "Thermal tool --help" "command failed"
+    fi
+
+    if "$thermal_bin" --status >/dev/null 2>&1; then
+        log_ok "Thermal tool responds to --status"
+    else
+        log_fail "Thermal tool --status" "status command failed"
+    fi
+
+    if "$thermal_bin" --dry-run -m step_wise -p >/dev/null 2>&1; then
+        log_ok "Thermal tool dry-run execution succeeded"
+    else
+        log_fail "Thermal tool dry-run execution" "dry-run command failed"
+    fi
+else
+    log_fail "Thermal management binary executable" "missing /usr/libexec/dragon-q8b-thermal or /usr/bin/dragon-q8b-thermal"
+fi
+
+thermal_conf="/etc/dragon-q8b/thermal.conf"
+if [[ -f "$thermal_conf" ]]; then
+    log_ok "Thermal configuration file $thermal_conf exists"
+    if grep -Eq '^[[:space:]]*GOVERNOR=' "$thermal_conf"; then
+        log_ok "Thermal configuration defines GOVERNOR policy"
+    else
+        log_fail "Thermal configuration GOVERNOR setting" "GOVERNOR definition missing in $thermal_conf"
+    fi
+else
+    log_fail "Thermal configuration file exists" "missing $thermal_conf"
+fi
+
+# -----------------------------------------------------------------------------
 # Test Summary
 # -----------------------------------------------------------------------------
 echo

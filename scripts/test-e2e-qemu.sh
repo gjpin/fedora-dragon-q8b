@@ -11,6 +11,7 @@ aarch64 virtual machine.
 Options:
   --copr OWNER/PROJECT     COPR repository to test (e.g. user/dragon-q8b-staging)
   --rpm-dir DIR            Local directory containing RPM packages to install and test
+  --release N              Fedora release version (default: 44)
   --image FILE             Path to an existing base Fedora aarch64 cloud image (.qcow2)
   --image-url URL          URL to download base Fedora aarch64 cloud image
   --firmware FILE          Path to UEFI firmware code (QEMU_EFI.fd / edk2-aarch64-code.fd)
@@ -31,7 +32,8 @@ source "$repo_root/config/dragon-q8b.env"
 copr_repo=""
 rpm_dir=""
 image_file=""
-image_url="https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-41-1.4.aarch64.qcow2"
+target_release="${FEDORA_RELEASE:-44}"
+image_url="${FEDORA_CLOUD_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/${target_release}/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-${target_release}-1.7.aarch64.qcow2}"
 firmware_code=""
 accel="auto"
 memory="2048"
@@ -39,13 +41,21 @@ smp="2"
 timeout_sec=900
 output_dir=""
 dry_run=0
+custom_image_url=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --copr) copr_repo=${2:?missing OWNER/PROJECT}; shift 2 ;;
         --rpm-dir) rpm_dir=${2:?missing RPM directory}; shift 2 ;;
+        --release)
+            target_release=${2:?missing release number}
+            if [[ $custom_image_url -eq 0 ]]; then
+                image_url="https://download.fedoraproject.org/pub/fedora/linux/releases/${target_release}/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-${target_release}-1.7.aarch64.qcow2"
+            fi
+            shift 2
+            ;;
         --image) image_file=${2:?missing image file}; shift 2 ;;
-        --image-url) image_url=${2:?missing image URL}; shift 2 ;;
+        --image-url) image_url=${2:?missing image URL}; custom_image_url=1; shift 2 ;;
         --firmware) firmware_code=${2:?missing firmware file}; shift 2 ;;
         --accel) accel=${2:?missing accelerator}; shift 2 ;;
         --memory) memory=${2:?missing memory size}; shift 2 ;;

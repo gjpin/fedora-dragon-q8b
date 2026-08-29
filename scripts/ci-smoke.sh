@@ -78,10 +78,12 @@ cd "$repo_root"
 bash -n scripts/*.sh \
     packaging/boot/dragon-q8b-bt-address \
     packaging/boot/dragon-q8b-refresh-boot \
+    packaging/boot/dragon-q8b-thermal \
     packaging/qnn/dragon-q8b-qnn-sync
 shellcheck scripts/*.sh \
     packaging/boot/dragon-q8b-bt-address \
     packaging/boot/dragon-q8b-refresh-boot \
+    packaging/boot/dragon-q8b-thermal \
     packaging/qnn/dragon-q8b-qnn-sync
 bash scripts/validate-vendor.sh
 for spec in packaging/*/*.spec; do
@@ -90,6 +92,7 @@ done
 
 # Test detect-affected-packages functionality
 test "$(bash scripts/detect-affected-packages.sh --packages "boot,fastrpc")" = "dragon-q8b-boot dragon-q8b-fastrpc"
+test -z "$(bash scripts/detect-affected-packages.sh --packages "none")"
 test "$(bash scripts/detect-affected-packages.sh --files packaging/boot/dragon-q8b-boot.spec)" = "dragon-q8b-boot"
 test "$(bash scripts/detect-affected-packages.sh --files vendor/armbian/sc8280xp-edge-patches/0001.patch)" = "kernel dragon-q8b-kernel"
 

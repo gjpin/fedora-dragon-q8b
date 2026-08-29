@@ -65,6 +65,13 @@ You can run the full QEMU aarch64 E2E validation test locally against a COPR rep
 ./scripts/test-e2e-qemu.sh --rpm-dir build/rpms
 ```
 
+To run only the E2E tests against already-published packages in GitHub Actions without rebuilding:
+- Go to the **Actions** tab in GitHub, select **Fedora Dragon Q8B QEMU E2E Validation**, and click **Run workflow**.
+- Or trigger it from the CLI with GitHub CLI:
+  ```shell
+  gh workflow run test-e2e.yml -f copr_project=dragon-q8b-staging
+  ```
+
 The runner automatically selects native hardware acceleration (`-accel hvf` on macOS Apple Silicon, `-accel kvm` on Linux with KVM, or `-accel tcg` for software emulation). It boots a Fedora aarch64 Cloud VM with UEFI firmware, installs the Dragon Q8B support bundle, and validates:
 
 - **Firmware & DSP runtime**: Radxa supplemental CDSP, ADSP, QUPv3, VPU blobs, and DSP runtime libraries.
@@ -75,6 +82,7 @@ The runner automatically selects native hardware acceleration (`-accel hvf` on m
 - **FastRPC Runtime**: Validates `libcdsprpc.so`, `libadsprpc.so`, `dsp_check`, udev rules, and environment variables.
 - **QNN Synchronization**: Validates `dragon-q8b-qnn` CLI, sync helper, systemd service, timer, and ld.so/profile configuration.
 - **ALSA UCM Profiles**: Validates Qualcomm SC8280XP and Dragon Q8B UCM2 configurations.
+- **Thermal & Fan Cooling**: Validates `dragon-q8b-thermal` utility, interactive menu, `step_wise` PWM fan default, and `/etc/dragon-q8b/thermal.conf` persistence.
 
 ## Local Fedora build
 

@@ -11,7 +11,7 @@ Options:
   --base REF            Base git reference/commit to diff against
   --head REF            Head git reference/commit to diff against (default: HEAD)
   --files FILE...       Explicit list of changed file paths
-  --packages LIST       Explicit list or comma/space-separated string of packages (e.g. "boot,fastrpc", "all", "auto")
+  --packages LIST       Explicit list or comma/space-separated string of packages (e.g. "boot,fastrpc", "all", "none", "auto")
   --all                 Select all packages
   --format FORMAT       Output format: "space" (default), "newline", or "json"
   -h, --help            Show this help message
@@ -53,6 +53,7 @@ normalize_pkg_name() {
 base_ref=
 head_ref=HEAD
 mode_all=0
+mode_none=0
 explicit_packages=()
 explicit_files=()
 format="space"
@@ -116,6 +117,10 @@ if [[ ${#explicit_packages[@]} -gt 0 ]]; then
         if [[ "$item" == "all" ]]; then
             mode_all=1
             break
+        elif [[ "$item" == "none" ]]; then
+            mode_none=1
+            selected_packages=()
+            break
         elif [[ "$item" == "auto" ]]; then
             # fallback to change detection
             explicit_packages=()
@@ -132,7 +137,7 @@ if [[ "$mode_all" -eq 1 ]]; then
     done
 fi
 
-if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 ]]; then
+if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 && "$mode_none" -eq 0 ]]; then
     changed_files=()
 
     if [[ ${#explicit_files[@]} -gt 0 ]]; then
