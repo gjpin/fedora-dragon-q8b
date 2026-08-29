@@ -160,7 +160,7 @@ detect_accelerator() {
         if [[ "$accel" == "hvf" || "$accel" == "kvm" ]]; then
             cpu_type="host"
         else
-            cpu_type="max"
+            cpu_type="max,pauth=off"
         fi
     fi
 }
@@ -265,8 +265,15 @@ guest_script="$cidata_dir/run-e2e-guest.sh"
 cat > "$guest_script" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-exec 1> >(tee -a /dev/ttyAMA0 /dev/console 2>/dev/null || true)
-exec 2>&1
+
+guest_exit() {
+    local ec=$?
+    set +e
+    echo "=== DRAGON-Q8B GUEST EXECUTION FINISHED (exit code: $ec) ==="
+    sync
+    poweroff -f || shutdown -h now || systemctl poweroff -ff || reboot -f || true
+}
+trap guest_exit EXIT ERR INT TERM
 
 echo "========================================================"
 echo " Starting In-Guest Dragon Q8B E2E Validation"
@@ -287,6 +294,9 @@ copr_target="__COPR_TARGET__"
 rpm_mount="/rpm-packages"
 
 if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
+    if [[ "$copr_target" != */* ]]; then
+        copr_target="gjpin/$copr_target"
+    fi
     echo "Enabling COPR repository: $copr_target"
     if ! command -v dnf >/dev/null 2>&1 && command -v dnf5 >/dev/null 2>&1; then
         dnf_cmd=dnf5
@@ -322,10 +332,6 @@ else
         bash "$repo_mount/scripts/validate-runtime.sh" || true
     fi
 fi
-
-sync
-echo "E2E guest execution finished. Shutting down system..."
-poweroff -f || shutdown -h now
 EOF
 
 # Substitute placeholders
@@ -336,12 +342,23 @@ cat > "$cidata_dir/user-data" <<EOF
 #cloud-config
 output:
   all: '| tee -a /dev/ttyAMA0 /dev/console /var/log/cloud-init-output.log'
+ssh_genkey: false
+ssh_deletekeys: false
 ssh_pwauth: true
 disable_root: false
 chpasswd:
   list: |
     root:fedora
   expire: false
+cloud_init_modules:
+  - migrator
+  - bootcmd
+  - write-files
+  - set_hostname
+  - users-groups
+cloud_config_modules:
+  - runcmd
+cloud_final_modules: []
 write_files:
   - path: /root/run-e2e-guest.sh
     permissions: '0755'
@@ -422,6 +439,7 @@ qemu_args=(
     -drive "file=$cidata_iso,format=raw,if=virtio"
     -netdev "user,id=net0"
     -device "virtio-net-pci,netdev=net0"
+    -device "virtio-rng-pci"
     -serial "stdio"
     -monitor "none"
 )
@@ -485,6 +503,7 @@ while kill -0 "$qemu_pid" 2>/dev/null; do
 done
 
 if [[ -n "$tail_pid" ]]; then
+    sleep 1
     kill "$tail_pid" 2>/dev/null || true
 fi
 wait "$qemu_pid" 2>/dev/null || true

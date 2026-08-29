@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   e2e-test:
-    runs-on: ubuntu-26.04-arm
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     container: fedora:44
     env:
@@ -48,12 +48,12 @@ jobs:
           INPUT_COPR_PROJECT: ${{ inputs.copr_project }}
           INPUT_TIMEOUT: ${{ inputs.timeout }}
         run: |
-          owner="${INPUT_COPR_OWNER:-$COPR_OWNER_SECRET}"
+          owner="${INPUT_COPR_OWNER:-${COPR_OWNER_SECRET:-gjpin}}"
           project="${INPUT_COPR_PROJECT:-dragon-q8b-staging}"
-          if [[ -n "$owner" && "$project" != */* ]]; then
-            copr_target="$owner/$project"
-          else
+          if [[ "$project" == */* ]]; then
             copr_target="$project"
+          else
+            copr_target="$owner/$project"
           fi
           echo "Executing E2E testing against COPR: $copr_target"
           mkdir -p "$RUNNER_TEMP/qemu-e2e"
@@ -61,7 +61,7 @@ jobs:
             --copr "$copr_target" \
             --release "$FEDORA_RELEASE" \
             --output "$RUNNER_TEMP/qemu-e2e" \
-            --timeout "${INPUT_TIMEOUT:-900}"
+            --timeout "${INPUT_TIMEOUT:-1200}"
       - name: Upload QEMU E2E test logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-26.04-arm
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 360
     container: fedora:44
     env:
@@ -173,7 +173,7 @@ jobs:
             --copr "$COPR_OWNER/$staging_project" \
             --release "$FEDORA_RELEASE" \
             --output "$RUNNER_TEMP/qemu-e2e" \
-            --timeout 900
+            --timeout 1200
       - name: Upload QEMU E2E test logs
         if: always() && env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
