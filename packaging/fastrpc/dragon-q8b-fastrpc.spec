@@ -43,7 +43,11 @@ with Qualcomm FastRPC.
 
 %build
 autoreconf -vfi
-%configure --disable-static
+%configure \
+    --disable-static \
+    --with-systemdsystemunitdir=%{_unitdir} \
+    --with-udevrulesdir=%{_udevrulesdir} \
+    --with-sysusersdir=%{_sysusersdir}
 %make_build
 
 %install
@@ -56,10 +60,16 @@ install -Dpm0644 %{SOURCE2} %{buildroot}%{_sysconfdir}/profile.d/dragon-q8b-fast
 %files
 %license LICENSE.txt
 %{_bindir}/dsp_check
-%{_sbindir}/*
+%{_sbindir}/adsprpcd
+%{_sbindir}/cdsprpcd
+%{_sbindir}/sdsprpcd
+%{_sbindir}/gdsprpcd
 %{_libdir}/lib*.so.*
-%{_udevrulesdir}/60-dragon-q8b-fastrpc.rules
+%{_unitdir}/*.service
+%{_sysusersdir}/fastrpc.conf
+%{_udevrulesdir}/*.rules
 %{_sysconfdir}/profile.d/dragon-q8b-fastrpc.sh
+%{_mandir}/man*/*
 
 %files devel
 %{_includedir}/*
