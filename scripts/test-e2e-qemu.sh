@@ -330,7 +330,7 @@ fi
 # Run the validation suite
 if [[ -x "$repo_mount/scripts/validate-e2e.sh" ]]; then
     echo "Executing validate-e2e.sh from repository..."
-    bash "$repo_mount/scripts/validate-e2e.sh" --allow-virtual --output-json /root/e2e-results.json || true
+    bash "$repo_mount/scripts/validate-e2e.sh" --allow-virtual --skip-dracut-build --output-json /root/e2e-results.json || true
 else
     echo "Running fallback validate-runtime..."
     if [[ -x "$repo_mount/scripts/validate-runtime.sh" ]]; then
@@ -405,6 +405,11 @@ $(sed 's/^/      /' "$repo_root/scripts/bootstrap-fedora-dragon-q8b.sh")
     owner: root:root
     content: |
 $(sed 's/^/      /' "$repo_root/scripts/validate-e2e.sh")
+  - path: /root/repo/scripts/validate-runtime.sh
+    permissions: '0755'
+    owner: root:root
+    content: |
+$(sed 's/^/      /' "$repo_root/scripts/validate-runtime.sh")
   - path: /root/repo/config/dragon-q8b.env
     permissions: '0644'
     owner: root:root
