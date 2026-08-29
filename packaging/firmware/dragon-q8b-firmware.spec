@@ -4,6 +4,15 @@
 %{!?radxa_firmware_ref:%global radxa_firmware_ref %{_source_firmware_ref}}
 %{!?radxa_firmware_version:%global radxa_firmware_version %{_source_firmware_version}}
 
+# Firmware and Hexagon DSP binaries are architecture-independent data blobs for host packaging
+%global _binaries_in_noarch_packages_terminate_build 0
+%global __strip /bin/true
+%global __brp_strip %{nil}
+%global __brp_strip_comment_note %{nil}
+%global __brp_strip_static_archive %{nil}
+%global __brp_ldconfig %{nil}
+AutoReqProv:    no
+
 Name:           dragon-q8b-firmware
 Version:        %{radxa_firmware_version}
 Release:        %{package_release}%{?dist}

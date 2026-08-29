@@ -151,7 +151,7 @@ cat > "$kernel_dir/kernel-local" <<'EOF'
 # Dragon Q8B / Qualcomm SC8280XP support.
 CONFIG_OF_OVERLAY=y
 CONFIG_EFI=y
-# CONFIG_EFI_ZBOOT is not set
+CONFIG_EFI_ZBOOT=y
 CONFIG_MODULE_COMPRESS_ZSTD=y
 # CONFIG_MODULE_COMPRESS_XZ is not set
 

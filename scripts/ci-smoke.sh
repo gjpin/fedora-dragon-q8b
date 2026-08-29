@@ -82,6 +82,25 @@ bash scripts/validate-vendor.sh
 for spec in packaging/*/*.spec; do
     rpmspec --parse "$spec" >/dev/null
 done
+
+smoke_rpm_topdir=$(mktemp -d)
+mkdir -p "$smoke_rpm_topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+# shellcheck disable=SC1091
+source config/dragon-q8b.env
+cp packaging/firmware/dragon-q8b-firmware.spec "$smoke_rpm_topdir/SPECS/"
+cp "vendor/radxa/firmware/radxa-firmware-${RADXA_FIRMWARE_REF}.tar.gz" "$smoke_rpm_topdir/SOURCES/"
+rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-firmware.spec" >/dev/null
+
+cp packaging/boot/dragon-q8b-boot.spec "$smoke_rpm_topdir/SPECS/"
+cp packaging/boot/* "$smoke_rpm_topdir/SOURCES/"
+rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-boot.spec" >/dev/null
+
+cp packaging/alsa/dragon-q8b-alsa-ucm.spec "$smoke_rpm_topdir/SPECS/"
+cp "vendor/radxa/alsa/alsa-ucm-conf_${ALSA_UCM_VERSION}_all.deb" "$smoke_rpm_topdir/SOURCES/"
+rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-alsa-ucm.spec" >/dev/null
+
+rm -rf "$smoke_rpm_topdir"
+
 bash scripts/prepare-kernel-source.sh --help >/dev/null
 bash scripts/build-srpms.sh --help >/dev/null
 test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq 35
