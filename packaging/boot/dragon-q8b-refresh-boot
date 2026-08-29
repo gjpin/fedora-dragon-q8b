@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+dtb_relpath=qcom/sc8280xp-radxa-dragon-q8b.dtb
+boot_args='clk_ignore_unused pd_ignore_unused arm64.nopauth efi=noruntime'
+
+find_dtb() {
+    local version=$1
+    local candidate
+    for candidate in \
+        "/usr/lib/modules/$version/dtb/$dtb_relpath" \
+        "/lib/modules/$version/dtb/$dtb_relpath" \
+        "/boot/dtb-$version/$dtb_relpath"; do
+        [[ -f "$candidate" ]] && { printf '%s\n' "$candidate"; return 0; }
+    done
+    return 1
+}
+
+command -v grubby >/dev/null 2>&1 || exit 0
+
+for module_dir in /usr/lib/modules/* /lib/modules/*; do
+    [[ -d "$module_dir" ]] || continue
+    version=${module_dir##*/}
+    [[ -f "$module_dir/vmlinuz" ]] || continue
+    dtb=$(find_dtb "$version") || {
+        printf '[dragon-q8b-boot] no Q8B DTB for %s\n' "$version" >&2
+        continue
+    }
+    grubby --update-kernel "$module_dir/vmlinuz" \
+        --args "$boot_args" \
+        --devtree "$dtb"
+done
+

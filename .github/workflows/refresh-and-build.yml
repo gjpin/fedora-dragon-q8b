@@ -1,0 +1,193 @@
+name: Refresh Fedora Dragon Q8B packages
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      copr_project:
+        description: COPR project to publish to
+        required: false
+        default: dragon-q8b-staging
+  pull_request:
+    paths:
+      - '.github/workflows/refresh-and-build.yml'
+      - 'config/**'
+      - 'packaging/**'
+      - 'scripts/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.resolve.outputs.CHANGED }}
+      fedora_release: ${{ steps.resolve.outputs.FEDORA_RELEASE }}
+      fedora_kernel_commit: ${{ steps.resolve.outputs.FEDORA_KERNEL_COMMIT }}
+      fedora_kernel_version: ${{ steps.resolve.outputs.FEDORA_KERNEL_VERSION }}
+      radxa_kernel_ref: ${{ steps.resolve.outputs.RADXA_KERNEL_REF }}
+      radxa_firmware_ref: ${{ steps.resolve.outputs.RADXA_FIRMWARE_REF }}
+      radxa_overlays_ref: ${{ steps.resolve.outputs.RADXA_OVERLAYS_REF }}
+      armbian_ref: ${{ steps.resolve.outputs.ARMBIAN_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          env_file="$RUNNER_TEMP/current-inputs.env"
+          bash scripts/check-updates.sh --output "$env_file"
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            sed -i 's/^CHANGED=.*/CHANGED=1/' "$env_file"
+          fi
+          while IFS='=' read -r key value; do
+            [[ -n "$key" ]] || continue
+            printf '%s=%s\n' "$key" "$value" >> "$GITHUB_OUTPUT"
+          done < "$env_file"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: current-inputs
+          path: ${{ runner.temp }}/current-inputs.env
+          if-no-files-found: error
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.changed == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    container: fedora:44
+    env:
+      FEDORA_RELEASE: ${{ needs.detect.outputs.fedora_release }}
+      ARMBIAN_REF_OVERRIDE: ${{ needs.detect.outputs.armbian_ref }}
+      RADXA_KERNEL_REF_OVERRIDE: ${{ needs.detect.outputs.radxa_kernel_ref }}
+      RADXA_FIRMWARE_REF_OVERRIDE: ${{ needs.detect.outputs.radxa_firmware_ref }}
+      RADXA_OVERLAYS_REF_OVERRIDE: ${{ needs.detect.outputs.radxa_overlays_ref }}
+      UPDATE_PATCH_MANIFEST: 1
+      KERNEL_BUILD_ID_OVERRIDE: dragonq8b.${{ github.run_number }}
+      PACKAGE_RELEASE_OVERRIDE: 1.${{ github.run_number }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Fedora build tools
+        run: |
+          dnf -y install \
+            bash coreutils curl git findutils grep sed awk \
+            rpm-build rpmdevtools fedpkg fedora-packager \
+            copr-cli dtc binutils tar gzip xz ShellCheck
+      - name: Validate shell and source manifests
+        run: |
+          shellcheck scripts/*.sh \
+            packaging/boot/dragon-q8b-bt-address \
+            packaging/boot/dragon-q8b-refresh-boot
+          for spec in packaging/*/*.spec; do
+            rpmspec --parse "$spec" >/dev/null
+          done
+          bash scripts/prepare-kernel-source.sh --help
+          bash scripts/build-srpms.sh --help
+          test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq 35
+      - name: Prepare Fedora kernel source
+        run: |
+          mkdir -p "$RUNNER_TEMP/prepared-kernel"
+          bash scripts/prepare-kernel-source.sh \
+            --release "$FEDORA_RELEASE" \
+            --output "$RUNNER_TEMP/prepared-kernel"
+      - name: Build source RPMs
+        run: |
+          mkdir -p "$RUNNER_TEMP/srpms"
+          bash scripts/build-srpms.sh \
+            --release "$FEDORA_RELEASE" \
+            --source-dir "$RUNNER_TEMP/prepared-kernel/kernel" \
+            --output "$RUNNER_TEMP/srpms"
+          bash scripts/validate-srpms.sh "$RUNNER_TEMP/srpms"
+      - name: Upload source RPMs and metadata
+        run: |
+          mkdir -p "$RUNNER_TEMP/dragon-q8b-artifacts"
+          cp "$RUNNER_TEMP/srpms"/*.src.rpm "$RUNNER_TEMP/dragon-q8b-artifacts/"
+          cp "$RUNNER_TEMP/prepared-kernel/source-metadata.env" \
+            "$RUNNER_TEMP/dragon-q8b-artifacts/"
+          cp "$RUNNER_TEMP/prepared-kernel/armbian-sc8280xp-edge-patches.sha256" \
+            "$RUNNER_TEMP/dragon-q8b-artifacts/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dragon-q8b-srpms-${{ github.run_id }}
+          path: ${{ runner.temp }}/dragon-q8b-artifacts/*
+          if-no-files-found: error
+      - name: Configure COPR credentials
+        if: env.EVENT_NAME != 'pull_request'
+        env:
+          COPR_CONFIG_SECRET: ${{ secrets.COPR_CONFIG }}
+        run: |
+          test -n "$COPR_CONFIG_SECRET" || {
+            echo 'COPR_CONFIG GitHub secret is required for scheduled/manual publishing' >&2
+            exit 1
+          }
+          umask 077
+          mkdir -p "$HOME/.config"
+          printf '%s\n' "$COPR_CONFIG_SECRET" > "$HOME/.config/copr"
+      - name: Submit staging or selected COPR build
+        if: env.EVENT_NAME != 'pull_request'
+        env:
+          COPR_OWNER: ${{ secrets.COPR_OWNER }}
+          REQUESTED_PROJECT: ${{ inputs.copr_project }}
+        run: |
+          test -n "$COPR_OWNER" || {
+            echo 'COPR_OWNER GitHub secret is required for scheduled/manual publishing' >&2
+            exit 1
+          }
+          project=${REQUESTED_PROJECT:-dragon-q8b-staging}
+          bash scripts/submit-copr-builds.sh \
+            --project "$COPR_OWNER/$project" \
+            --chroot "fedora-${FEDORA_RELEASE}-aarch64" \
+            --srpm-dir "$RUNNER_TEMP/srpms"
+
+  update-lock:
+    needs: [detect, build]
+    if: needs.build.result == 'success' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: current-inputs
+          path: ${{ runner.temp }}/current-inputs
+      - uses: actions/download-artifact@v4
+        with:
+          name: dragon-q8b-srpms-${{ github.run_id }}
+          path: ${{ runner.temp }}/build-artifacts
+      - name: Open or update source-lock pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="bot/inputs-refresh"
+          git fetch origin "$branch" >/dev/null 2>&1 || true
+          if git show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+            git switch -C "$branch" "origin/$branch"
+          else
+            git switch -c "$branch"
+          fi
+          bash scripts/update-input-lock.sh --env "$RUNNER_TEMP/current-inputs/current-inputs.env"
+          if [[ -f "$RUNNER_TEMP/build-artifacts/armbian-sc8280xp-edge-patches.sha256" ]]; then
+            cp "$RUNNER_TEMP/build-artifacts/armbian-sc8280xp-edge-patches.sha256" \
+              config/armbian-sc8280xp-edge-patches.sha256
+          fi
+          git diff --check
+          if git diff --quiet -- packaging/inputs.lock config/armbian-sc8280xp-edge-patches.sha256; then
+            echo 'Source lock is already current.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add packaging/inputs.lock config/armbian-sc8280xp-edge-patches.sha256
+          git commit -m 'chore: refresh Dragon Q8B source pins'
+          git push --force origin "HEAD:$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title 'chore: refresh Dragon Q8B source pins' \
+            --body 'Generated after a successful staging COPR build. Review the kernel rebase and physical-board validation before merging.' \
+            || true

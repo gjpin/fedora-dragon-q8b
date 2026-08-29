@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+log() { printf '[dragon-q8b-bt] %s\n' "$*" >&2; }
+
+config=/etc/dragon-q8b/bluetooth.conf
+configured=
+if [[ -r "$config" ]]; then
+    configured=$(awk -F= '/^[[:space:]]*PUBLIC_ADDR[[:space:]]*=/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$config")
+fi
+
+if [[ -n "$configured" && "$configured" != auto ]]; then
+    address=$configured
+else
+    machine_id=$(cat /etc/machine-id)
+    [[ "$machine_id" =~ ^[[:xdigit:]]{32}$ ]] || {
+        log "invalid /etc/machine-id; leaving Bluetooth address unchanged"
+        exit 0
+    }
+    digest=$(printf '%s' "$machine_id" | sha256sum | awk '{print $1}')
+    address="02:${digest:0:2}:${digest:2:2}:${digest:4:2}:${digest:6:2}:${digest:8:2}"
+fi
+
+if ! command -v btmgmt >/dev/null 2>&1; then
+    log "btmgmt is not installed; leaving Bluetooth address unchanged"
+    exit 0
+fi
+
+for attempt in {1..12}; do
+    [[ $attempt -eq 1 ]] || log "waiting for Bluetooth controller ($attempt/12)"
+    if btmgmt info >/dev/null 2>&1; then
+        if yes | btmgmt public-addr "$address" >/dev/null 2>&1; then
+            log "configured public Bluetooth address $address"
+            exit 0
+        fi
+    fi
+    sleep 1
+done
+
+log "Bluetooth controller was not ready; bluetoothd may retry during startup"
+exit 0
