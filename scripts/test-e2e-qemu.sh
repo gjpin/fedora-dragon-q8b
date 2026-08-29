@@ -275,6 +275,11 @@ guest_exit() {
 }
 trap guest_exit EXIT ERR INT TERM
 
+if [[ -f /root/.e2e-started ]]; then
+    exit 0
+fi
+touch /root/.e2e-started
+
 echo "========================================================"
 echo " Starting In-Guest Dragon Q8B E2E Validation"
 echo "========================================================"
@@ -341,7 +346,7 @@ chmod +x "$guest_script"
 cat > "$cidata_dir/user-data" <<EOF
 #cloud-config
 output:
-  all: '| tee -a /dev/ttyAMA0 /dev/console /var/log/cloud-init-output.log'
+  all: '| tee -a /dev/console /var/log/cloud-init-output.log'
 ssh_genkey: false
 ssh_deletekeys: false
 ssh_pwauth: true
@@ -350,16 +355,41 @@ chpasswd:
   list: |
     root:fedora
   expire: false
-cloud_init_modules:
-  - migrator
-  - bootcmd
-  - write-files
-  - set_hostname
-  - users-groups
-cloud_config_modules:
-  - runcmd
-cloud_final_modules: []
 write_files:
+  - path: /etc/systemd/system/dragon-q8b-e2e.service
+    permissions: '0644'
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Dragon Q8B E2E Validation Runner
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash /root/run-e2e-guest.sh
+      StandardOutput=journal+console
+      StandardError=journal+console
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/multi-user.target.wants/dragon-q8b-e2e.service
+    permissions: '0644'
+    owner: root:root
+    content: |
+      [Unit]
+      Description=Dragon Q8B E2E Validation Runner
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/bash /root/run-e2e-guest.sh
+      StandardOutput=journal+console
+      StandardError=journal+console
+
+      [Install]
+      WantedBy=multi-user.target
   - path: /root/run-e2e-guest.sh
     permissions: '0755'
     owner: root:root
