@@ -1,4 +1,4 @@
-620de911a23a5fccb346419617064df9d15d8dec928ac7bbb8501a6a7ce30519  vendor/README.md
+e1e883b2cb003a26cf609f9a4b32109add94694a34a5036eac61e2ef12e8eb78  vendor/README.md
 7c1d63de1cc61f7f7b2cd3a46ff429de52d27d1d99630cc37a56c3eab4cd8e69  vendor/armbian/sc8280xp-edge-patches/0001-arm64-dts-sc8280xp-fix-dwc3-reg-size.patch
 a1761d7a671771c057bd50e813a6eb4d33f4ed79911dbbb2753a82b6df64d0f1  vendor/armbian/sc8280xp-edge-patches/0002-arm64-dts-sc8280xp-fix-gpi-dma0-channels.patch
 bfb5cf80afff4c22839351e40250227f88bd8523e6ae27edad72d55a8ed053e3  vendor/armbian/sc8280xp-edge-patches/0003-arm64-dts-sc8280xp-add-qup-pinctrl-states.patch

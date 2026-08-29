@@ -1,11 +1,11 @@
 # Vendored build inputs
 
-This directory contains the exact Radxa and Armbian source inputs used by the
-Dragon Q8B packages. The Radxa archives are large files tracked with Git LFS;
+This directory contains the exact Radxa, Armbian, and Qualcomm source inputs used by the
+Dragon Q8B packages. The Radxa and Qualcomm archives are large files tracked with Git LFS;
 patches, metadata, and manifests remain ordinary Git files.
 
 `scripts/refresh-vendor.sh` is the only intended writer. It checks Radxa,
-Armbian, and ALSA upstream revisions, downloads a staged snapshot, and updates
+Armbian, ALSA, and Qualcomm upstream revisions, downloads a staged snapshot, and updates
 `packaging/inputs.lock` only after all inputs pass validation.
 
 Builds consume this directory for project-specific inputs. Fedora's kernel
@@ -25,6 +25,7 @@ and [`SHA256SUMS`](SHA256SUMS).
 | `radxa/overlays/radxa-overlays-*.tar.gz` | [`radxa-pkg/radxa-overlays`](https://github.com/radxa-pkg/radxa-overlays/archive/be64705364a8f131da018e322e04f3232e56d9a9.tar.gz), commit `be64705364a8f131da018e322e04f3232e56d9a9` |
 | `radxa/alsa/alsa-ucm-conf_*.deb` | [`radxa-pkg/alsa-ucm-conf` release `1.2.16.1-radxa-1`](https://github.com/radxa-pkg/alsa-ucm-conf/releases/tag/1.2.16.1-radxa-1), asset `alsa-ucm-conf_1.2.16.1-radxa-1_all.deb` |
 | `armbian/sc8280xp-edge-patches/*.patch` | [`armbian/build`](https://github.com/armbian/build/tree/1f33ee9db0063ec281d3c273ac5df5dcd6f84450/patch/kernel/archive/sc8280xp-edge), commit `1f33ee9db0063ec281d3c273ac5df5dcd6f84450` |
+| `qualcomm/fastrpc/fastrpc-*.tar.gz` | [`qualcomm/fastrpc`](https://github.com/qualcomm/fastrpc/archive/228d98b5f143ed917789cde017a8aa548e65b80b.tar.gz), commit `228d98b5f143ed917789cde017a8aa548e65b80b` |
 
 The Armbian patch filenames are listed in
 [`../config/armbian-sc8280xp-edge-patches.list`](../config/armbian-sc8280xp-edge-patches.list);

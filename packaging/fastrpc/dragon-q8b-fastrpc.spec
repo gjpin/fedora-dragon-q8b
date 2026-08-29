@@ -21,6 +21,7 @@ BuildRequires:  automake
 BuildRequires:  libtool
 BuildRequires:  pkgconfig
 BuildRequires:  libyaml-devel
+BuildRequires:  libbsd-devel
 BuildRequires:  systemd-rpm-macros
 Requires:       dragon-q8b-firmware
 
@@ -41,25 +42,27 @@ with Qualcomm FastRPC.
 %setup -q -n fastrpc-%{qualcomm_fastrpc_ref}
 
 %build
-./autogen.sh
+autoreconf -vfi
 %configure --disable-static
 %make_build
 
 %install
 %make_install
 find %{buildroot} -name '*.la' -delete
+rm -rf %{buildroot}%{_libdir}/fastrpc_test %{buildroot}%{_datadir}/fastrpc_test %{buildroot}%{_bindir}/fastrpc_test
 install -Dpm0644 %{SOURCE1} %{buildroot}%{_udevrulesdir}/60-dragon-q8b-fastrpc.rules
 install -Dpm0644 %{SOURCE2} %{buildroot}%{_sysconfdir}/profile.d/dragon-q8b-fastrpc.sh
 
 %files
 %license LICENSE.txt
+%{_bindir}/dsp_check
+%{_sbindir}/*
 %{_libdir}/lib*.so.*
-%{_sbindir}/adsprpcd
-%{_sbindir}/cdsprpcd
-%{_sbindir}/sdsprpcd
-%{_sbindir}/gdsprpcd
-%{_udevrulesdir}/60-dragon-q8b-fastrpc.rules
+%{_unitdir}/*.service
+%{_sysusersdir}/*.conf
+%{_udevrulesdir}/*.rules
 %{_sysconfdir}/profile.d/dragon-q8b-fastrpc.sh
+%{_mandir}/man*/*
 
 %files devel
 %{_includedir}/*

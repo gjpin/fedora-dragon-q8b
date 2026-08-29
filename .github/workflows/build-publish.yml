@@ -24,6 +24,10 @@ on:
         description: COPR project to publish to
         required: false
         default: dragon-q8b-staging
+      packages:
+        description: Packages to build (auto, all, or comma/space-separated list)
+        required: false
+        default: auto
 
 permissions:
   contents: read
@@ -35,20 +39,20 @@ jobs:
     container: fedora:44
     env:
       FEDORA_RELEASE: 44
-      KERNEL_BUILD_ID_OVERRIDE: dragonq8b.${{ github.run_number }}
-      PACKAGE_RELEASE_OVERRIDE: 1.${{ github.run_number }}
       EVENT_NAME: ${{ github.event_name }}
     steps:
       - name: Install Fedora build tools and Git LFS
         run: |
-          dnf -y install \
+          dnf -y --disablerepo='*openh264*' install \
             bash coreutils git git-lfs findutils grep sed awk \
             fedpkg fedora-packager \
             rpm-build rpmdevtools kernel-rpm-macros python3-devel \
-            make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck
+            make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck \
+            autoconf automake libtool libyaml-devel libbsd-devel
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
+          fetch-depth: 0
       - name: Materialize LFS inputs
         run: |
           repo_root="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is unset}"
@@ -61,20 +65,49 @@ jobs:
           bash scripts/validate-vendor.sh
           shellcheck scripts/*.sh \
             packaging/boot/dragon-q8b-bt-address \
-            packaging/boot/dragon-q8b-refresh-boot
+            packaging/boot/dragon-q8b-refresh-boot \
+            packaging/qnn/dragon-q8b-qnn-sync
           for spec in packaging/*/*.spec; do
             rpmspec --parse "$spec" >/dev/null
           done
           bash scripts/prepare-kernel-source.sh --help
           bash scripts/build-srpms.sh --help
+          bash scripts/detect-affected-packages.sh --help
           test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq 35
+      - name: Detect affected packages
+        id: detect_packages
+        env:
+          INPUT_PACKAGES: ${{ inputs.packages }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: |
+          pkgs_input="${INPUT_PACKAGES:-auto}"
+          if [[ "$pkgs_input" != "auto" ]]; then
+            affected=$(bash scripts/detect-affected-packages.sh --packages "$pkgs_input")
+          else
+            affected=$(bash scripts/detect-affected-packages.sh)
+          fi
+          echo "affected_packages=$affected" >> "$GITHUB_OUTPUT"
+          echo "Affected packages: $affected"
+          if [[ -z "$affected" ]]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+          if [[ " $affected " =~ " kernel " ]]; then
+            echo "needs_kernel=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_kernel=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Prepare Fedora kernel source
+        if: steps.detect_packages.outputs.needs_kernel == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/prepared-kernel"
           bash scripts/prepare-kernel-source.sh \
             --release "$FEDORA_RELEASE" \
             --output "$RUNNER_TEMP/prepared-kernel"
       - name: Check Fedora patch redundancy
+        if: steps.detect_packages.outputs.needs_kernel == 'true'
         run: |
           bash scripts/check-patch-redundancy.sh \
             --kernel-dir "$RUNNER_TEMP/prepared-kernel/kernel" \
@@ -82,21 +115,24 @@ jobs:
             --patch-list config/armbian-sc8280xp-edge-patches.list \
             --output "$RUNNER_TEMP/prepared-kernel/patch-status.tsv"
       - name: Upload patch redundancy report
-        if: always()
+        if: always() && steps.detect_packages.outputs.needs_kernel == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: patch-status-${{ github.run_id }}
           path: ${{ runner.temp }}/prepared-kernel/patch-status.tsv
           if-no-files-found: ignore
       - name: Build source RPMs
+        if: steps.detect_packages.outputs.has_changes == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/srpms"
-          bash scripts/build-srpms.sh \
-            --release "$FEDORA_RELEASE" \
-            --source-dir "$RUNNER_TEMP/prepared-kernel/kernel" \
-            --output "$RUNNER_TEMP/srpms"
+          build_args=(--release "$FEDORA_RELEASE" --output "$RUNNER_TEMP/srpms" --packages "${{ steps.detect_packages.outputs.affected_packages }}")
+          if [[ "${{ steps.detect_packages.outputs.needs_kernel }}" == "true" ]]; then
+            build_args+=(--source-dir "$RUNNER_TEMP/prepared-kernel/kernel")
+          fi
+          bash scripts/build-srpms.sh "${build_args[@]}"
           bash scripts/validate-srpms.sh "$RUNNER_TEMP/srpms"
       - name: Upload source RPMs and metadata
+        if: steps.detect_packages.outputs.has_changes == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dragon-q8b-srpms-${{ github.run_id }}
@@ -105,9 +141,9 @@ jobs:
             ${{ runner.temp }}/prepared-kernel/source-metadata.env
             ${{ runner.temp }}/prepared-kernel/patch-status.tsv
             ${{ runner.temp }}/prepared-kernel/armbian-sc8280xp-edge-patches.sha256
-          if-no-files-found: error
+          if-no-files-found: ignore
       - name: Configure COPR credentials
-        if: env.EVENT_NAME != 'pull_request'
+        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_CONFIG_SECRET: ${{ secrets.COPR_CONFIG }}
         run: |
@@ -119,7 +155,7 @@ jobs:
           mkdir -p "$HOME/.config"
           printf '%s\n' "$COPR_CONFIG_SECRET" > "$HOME/.config/copr"
       - name: Publish to staging or selected COPR project
-        if: env.EVENT_NAME != 'pull_request'
+        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_OWNER: ${{ secrets.COPR_OWNER }}
           REQUESTED_PROJECT: ${{ inputs.copr_project }}
@@ -129,7 +165,7 @@ jobs:
             exit 1
           }
           project=${REQUESTED_PROJECT:-dragon-q8b-staging}
-          dnf -y install copr-cli
+          dnf -y install copr-cli python3-copr
           bash scripts/submit-copr-builds.sh \
             --project "$COPR_OWNER/$project" \
             --chroot "fedora-${FEDORA_RELEASE}-aarch64" \

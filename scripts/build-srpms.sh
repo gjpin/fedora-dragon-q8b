@@ -3,10 +3,17 @@ set -Eeuo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: build-srpms.sh --source-dir DIR --output DIR [--release N]
+Usage: build-srpms.sh --output DIR [--source-dir DIR] [--release N] [--packages "PKG..."]
 
-Build the prepared Fedora kernel SRPM and the Dragon Q8B support SRPMs.
+Build the prepared Fedora kernel SRPM and/or the Dragon Q8B support SRPMs.
 This script is intended for Fedora/COPR builders.
+
+Options:
+  --output DIR          Destination directory for generated .src.rpm files (required)
+  --source-dir DIR      Fedora kernel source tree directory (required if building kernel)
+  --release N           Fedora release number (default: 44)
+  --packages "PKG..."   Space/comma-separated list of packages to build (default: "all")
+  -h, --help            Show this help message
 EOF
 }
 
@@ -28,21 +35,48 @@ PACKAGE_RELEASE=${PACKAGE_RELEASE_OVERRIDE:-1}
 source_dir=
 output=
 release=${FEDORA_RELEASE:-44}
+packages_arg="all"
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --source-dir) source_dir=${2:?missing source directory}; shift 2 ;;
         --output) output=${2:?missing output directory}; shift 2 ;;
         --release) release=${2:?missing Fedora release}; shift 2 ;;
+        --packages) packages_arg=${2:?missing packages list}; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
     esac
 done
 
-[[ -d "$source_dir" ]] || { echo "missing source directory: $source_dir" >&2; exit 1; }
 [[ -n "$output" ]] || { usage >&2; exit 2; }
-echo "Building source RPMs for Fedora $release"
 
-for command in rpmbuild rpmspec fedpkg; do
+# Normalize requested packages
+requested_packages=()
+if [[ -x "$repo_root/scripts/detect-affected-packages.sh" ]]; then
+    read -r -a requested_packages <<< "$("$repo_root/scripts/detect-affected-packages.sh" --packages "$packages_arg")"
+else
+    IFS=', ' read -r -a requested_packages <<< "$packages_arg"
+fi
+
+if [[ ${#requested_packages[@]} -eq 0 ]]; then
+    echo "No packages selected to build."
+    exit 0
+fi
+
+declare -A pkg_map=()
+for p in "${requested_packages[@]}"; do
+    pkg_map["$p"]=1
+done
+
+echo "Building source RPMs for Fedora $release: ${requested_packages[*]}"
+
+# Command prerequisites
+required_commands=(rpmbuild rpmspec)
+if [[ -n "${pkg_map[kernel]:-}" ]]; then
+    required_commands+=(fedpkg)
+fi
+
+for command in "${required_commands[@]}"; do
     command -v "$command" >/dev/null || {
         echo "missing required command: $command" >&2
         exit 1
@@ -53,26 +87,47 @@ mkdir -p "$output" "$output/rpmbuild" "$output/sources"
 topdir=$(cd "$output/rpmbuild" && pwd)
 mkdir -p "$topdir/BUILD" "$topdir/BUILDROOT" "$topdir/RPMS" "$topdir/SOURCES" "$topdir/SPECS" "$topdir/SRPMS"
 
-cp "$source_dir/kernel.spec" "$topdir/SPECS/kernel.spec"
-cp "$source_dir/dragon-q8b-kernel.patch" "$topdir/SOURCES/dragon-q8b-kernel.patch"
-cp "$source_dir/kernel-local" "$topdir/SOURCES/kernel-local"
+# Build kernel SRPM if requested
+if [[ -n "${pkg_map[kernel]:-}" ]]; then
+    [[ -d "$source_dir" ]] || { echo "missing source directory: $source_dir" >&2; exit 1; }
+    cp "$source_dir/kernel.spec" "$topdir/SPECS/kernel.spec"
+    cp "$source_dir/dragon-q8b-kernel.patch" "$topdir/SOURCES/dragon-q8b-kernel.patch"
+    cp "$source_dir/kernel-local" "$topdir/SOURCES/kernel-local"
 
-echo "Fetching Fedora kernel sources listed by the dist-git spec"
-(cd "$source_dir" && fedpkg sources)
-find "$source_dir" -maxdepth 1 -type f \
-    ! -name 'kernel.spec' \
-    ! -name 'kernel-local' \
-    ! -name 'dragon-q8b-kernel.patch' \
-    -exec cp -n {} "$topdir/SOURCES/" \;
+    echo "Fetching Fedora kernel sources listed by the dist-git spec"
+    (cd "$source_dir" && fedpkg sources)
+    find "$source_dir" -maxdepth 1 -type f \
+        ! -name 'kernel.spec' \
+        ! -name 'kernel-local' \
+        ! -name 'dragon-q8b-kernel.patch' \
+        -exec cp -n {} "$topdir/SOURCES/" \;
 
-# Run Fedora's %prep first so the SRPM-producing job catches conflicts between
-# Fedora's own patch and the Q8B queue instead of deferring that failure to
-# the COPR binary build.
-rpmbuild -bp --nodeps --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
-rpmbuild -bs --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
-cp "$topdir"/SRPMS/*.src.rpm "$output/"
+    # Run Fedora's %prep first so the SRPM-producing job catches conflicts between
+    # Fedora's own patch and the Q8B queue instead of deferring that failure to
+    # the COPR binary build.
+    rpmbuild -bp --nodeps --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
+    rpmbuild -bs --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
+    cp "$topdir"/SRPMS/*.src.rpm "$output/"
+fi
 
-for package_dir in firmware boot overlays alsa fastrpc qnn meta kernel-meta; do
+# Build non-kernel SRPMs
+package_dirs=(
+    "firmware:dragon-q8b-firmware"
+    "boot:dragon-q8b-boot"
+    "overlays:dragon-q8b-overlays"
+    "alsa:dragon-q8b-alsa-ucm"
+    "fastrpc:dragon-q8b-fastrpc"
+    "qnn:dragon-q8b-qnn"
+    "kernel-meta:dragon-q8b-kernel"
+    "meta:dragon-q8b-support"
+)
+
+for entry in "${package_dirs[@]}"; do
+    package_dir="${entry%%:*}"
+    package_name="${entry##*:}"
+
+    [[ -n "${pkg_map[$package_name]:-}" ]] || continue
+
     spec_dir="$repo_root/packaging/$package_dir"
     [[ -d "$spec_dir" ]] || continue
     spec=$(find "$spec_dir" -maxdepth 1 -name '*.spec' -print -quit)
@@ -111,10 +166,19 @@ for package_dir in firmware boot overlays alsa fastrpc qnn meta kernel-meta; do
             "$topdir/SOURCES/"
     fi
     if [[ "$package_dir" == kernel-meta ]]; then
-        kernel_version=$(rpmspec --query --queryformat '%{VERSION}\n' "$topdir/SPECS/kernel.spec" | awk 'NR == 1 {value=$0} END {print value}')
-        kernel_release=$(rpmspec --query --queryformat '%{RELEASE}\n' "$topdir/SPECS/kernel.spec" | awk 'NR == 1 {value=$0} END {print value}')
-        sed -i "s/^%global kernel_need_version .*/%global kernel_need_version $kernel_version/" "$topdir/SPECS/$spec_name"
-        sed -i "s/^%global kernel_need_release .*/%global kernel_need_release $kernel_release/" "$topdir/SPECS/$spec_name"
+        kernel_spec_target=""
+        if [[ -f "$topdir/SPECS/kernel.spec" ]]; then
+            kernel_spec_target="$topdir/SPECS/kernel.spec"
+        elif [[ -n "$source_dir" && -f "$source_dir/kernel.spec" ]]; then
+            kernel_spec_target="$source_dir/kernel.spec"
+        fi
+
+        if [[ -n "$kernel_spec_target" ]]; then
+            kernel_version=$(rpmspec --query --queryformat '%{VERSION}\n' "$kernel_spec_target" | awk 'NR == 1 {value=$0} END {print value}')
+            kernel_release=$(rpmspec --query --queryformat '%{RELEASE}\n' "$kernel_spec_target" | awk 'NR == 1 {value=$0} END {print value}')
+            sed -i "s/^%global kernel_need_version .*/%global kernel_need_version $kernel_version/" "$topdir/SPECS/$spec_name"
+            sed -i "s/^%global kernel_need_release .*/%global kernel_need_release $kernel_release/" "$topdir/SPECS/$spec_name"
+        fi
     fi
     rpmbuild -bs --define "_topdir $topdir" "$topdir/SPECS/$spec_name"
     cp "$topdir"/SRPMS/*.src.rpm "$output/"

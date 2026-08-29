@@ -11,5 +11,6 @@ while IFS= read -r -d '' srpm; do
     printf 'validated SRPM %s-%s\n' "$name" "$version"
     rpm -qpl "$srpm" >/dev/null
 done < <(find "$directory" -maxdepth 1 -type f -name '*.src.rpm' -print0)
-[[ $count -gt 0 ]] || { echo "no SRPMs found in $directory" >&2; exit 1; }
-
+if [[ $count -eq 0 ]]; then
+    echo "no SRPMs found in $directory"
+fi

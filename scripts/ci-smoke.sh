@@ -28,13 +28,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$engine" ]]; then
-    if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
-        engine=podman
-    elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
         engine=docker
+    elif command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+        engine=podman
     else
-        echo "no usable Podman or Docker engine found" >&2
-        echo "start Podman with 'podman machine start' or start Docker Desktop" >&2
+        echo "no usable Docker or Podman engine found" >&2
+        echo "start Docker Desktop or run 'podman machine start'" >&2
         exit 1
     fi
 fi
@@ -56,12 +56,12 @@ echo "Running CI smoke test with $engine and $image"
 set -Eeuo pipefail
 
 skip_lfs=${1:?missing LFS mode}
-dnf -y install \
+dnf -y --disablerepo='*openh264*' install \
     bash coreutils git git-lfs findutils grep sed awk \
     fedpkg fedora-packager \
     rpm-build rpmdevtools kernel-rpm-macros python3-devel \
     make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck \
-    autoconf automake libtool libyaml-devel
+    autoconf automake libtool libyaml-devel libbsd-devel
 
 mkdir -p "$GITHUB_WORKSPACE"
 cp -a /src/. "$GITHUB_WORKSPACE/"
@@ -88,6 +88,11 @@ for spec in packaging/*/*.spec; do
     rpmspec --parse "$spec" >/dev/null
 done
 
+# Test detect-affected-packages functionality
+test "$(bash scripts/detect-affected-packages.sh --packages "boot,fastrpc")" = "dragon-q8b-boot dragon-q8b-fastrpc"
+test "$(bash scripts/detect-affected-packages.sh --files packaging/boot/dragon-q8b-boot.spec)" = "dragon-q8b-boot"
+test "$(bash scripts/detect-affected-packages.sh --files vendor/armbian/sc8280xp-edge-patches/0001.patch)" = "kernel dragon-q8b-kernel"
+
 smoke_rpm_topdir=$(mktemp -d)
 mkdir -p "$smoke_rpm_topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 # shellcheck disable=SC1091
@@ -107,13 +112,25 @@ rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/drago
 cp packaging/fastrpc/dragon-q8b-fastrpc.spec "$smoke_rpm_topdir/SPECS/"
 find packaging/fastrpc -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
 cp "vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz" "$smoke_rpm_topdir/SOURCES/"
-rpmbuild -bs --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-fastrpc.spec" >/dev/null
+rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-fastrpc.spec" >/dev/null
 
 cp packaging/qnn/dragon-q8b-qnn.spec "$smoke_rpm_topdir/SPECS/"
 find packaging/qnn -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-qnn.spec" >/dev/null
 
+cp packaging/meta/dragon-q8b-support.spec "$smoke_rpm_topdir/SPECS/"
+rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-support.spec" >/dev/null
+
 rm -rf "$smoke_rpm_topdir"
+
+# Test selective build-srpms
+smoke_srpm_dir=$(mktemp -d)
+bash scripts/build-srpms.sh --packages "dragon-q8b-boot dragon-q8b-fastrpc" --output "$smoke_srpm_dir"
+bash scripts/validate-srpms.sh "$smoke_srpm_dir"
+test -f "$smoke_srpm_dir"/dragon-q8b-boot-*.src.rpm
+test -f "$smoke_srpm_dir"/dragon-q8b-fastrpc-*.src.rpm
+test ! -f "$smoke_srpm_dir"/dragon-q8b-firmware-*.src.rpm
+rm -rf "$smoke_srpm_dir"
 
 bash scripts/prepare-kernel-source.sh --help >/dev/null
 bash scripts/build-srpms.sh --help >/dev/null

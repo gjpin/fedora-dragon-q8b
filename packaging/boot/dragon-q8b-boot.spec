@@ -10,6 +10,7 @@ BuildArch:      noarch
 Requires:       dracut
 Requires:       grubby
 Requires(posttrans): dracut
+BuildRequires:  systemd-rpm-macros
 
 Source0:        dragon-q8b-bt-address
 Source1:        dragon-q8b-bt.conf
