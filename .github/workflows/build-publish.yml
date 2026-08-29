@@ -49,8 +49,10 @@ jobs:
             fedpkg fedora-packager \
             rpm-build rpmdevtools kernel-rpm-macros python3-devel \
             make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck
-          git lfs install --local
-          git lfs pull
+          repo_root="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is unset}"
+          git -C "$repo_root" rev-parse --show-toplevel
+          git -C "$repo_root" lfs install --local
+          git -C "$repo_root" lfs pull
       - name: Validate shell, vendored inputs, and specs
         run: |
           bash scripts/validate-vendor.sh
