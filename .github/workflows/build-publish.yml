@@ -39,16 +39,18 @@ jobs:
       PACKAGE_RELEASE_OVERRIDE: 1.${{ github.run_number }}
       EVENT_NAME: ${{ github.event_name }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: false
-      - name: Install Fedora build tools and materialize LFS inputs
+      - name: Install Fedora build tools and Git LFS
         run: |
           dnf -y install \
             bash coreutils git git-lfs findutils grep sed awk \
             fedpkg fedora-packager \
             rpm-build rpmdevtools kernel-rpm-macros python3-devel \
             make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+      - name: Materialize LFS inputs
+        run: |
           repo_root="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is unset}"
           git -C "$repo_root" rev-parse --show-toplevel
           git -C "$repo_root" lfs install --local

@@ -70,6 +70,28 @@ Build and validate the SRPMs:
 The output contains seven SRPMs: the Fedora `kernel` rebuild, four board
 components, and two dependency meta-packages.
 
+## Fast local CI simulation
+
+Before spending time on Fedora kernel source preparation, run the fast
+containerized checks locally. This reproduces the GitHub Actions tool
+installation, Git checkout/LFS setup, shell checks, vendored-input validation,
+and RPM spec parsing:
+
+```shell
+podman machine start
+./scripts/ci-smoke.sh
+```
+
+Docker Desktop works too:
+
+```shell
+./scripts/ci-smoke.sh --engine docker
+```
+
+The smoke test intentionally does not clone Fedora kernel dist-git, apply the
+patch queue, or build SRPMs. Those operations are much slower and are covered
+by the full workflow and the build commands above.
+
 ## 3. COPR
 
 COPR provides the build chroot and publishes the resulting RPM repository.
