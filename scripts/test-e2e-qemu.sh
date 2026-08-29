@@ -16,9 +16,10 @@ Options:
   --image-url URL          URL to download base Fedora aarch64 cloud image
   --firmware FILE          Path to UEFI firmware code (QEMU_EFI.fd / edk2-aarch64-code.fd)
   --accel ACCEL            QEMU accelerator (hvf, kvm, tcg, or auto; default: auto)
-  --memory MB              VM memory in megabytes (default: 2048)
-  --smp N                  Number of virtual CPUs (default: 2)
-  --timeout SEC            Execution timeout in seconds (default: 900)
+  --cpu CPU                QEMU CPU model (default: auto: host for KVM/HVF, max for TCG)
+  --memory MB              VM memory in megabytes (default: 4096)
+  --smp N                  Number of virtual CPUs (default: 4)
+  --timeout SEC            Execution timeout in seconds (default: 1200)
   --output DIR             Directory to save console logs and test reports
   --dry-run                Print QEMU launch command and exit without starting VM
   -h, --help               Show this help message
@@ -36,6 +37,7 @@ target_release="${FEDORA_RELEASE:-44}"
 image_url="${FEDORA_CLOUD_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/${target_release}/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-${target_release}-1.7.aarch64.qcow2}"
 firmware_code=""
 accel="auto"
+cpu_type="auto"
 memory="4096"
 smp="4"
 timeout_sec=1200
@@ -58,6 +60,7 @@ while [[ $# -gt 0 ]]; do
         --image-url) image_url=${2:?missing image URL}; custom_image_url=1; shift 2 ;;
         --firmware) firmware_code=${2:?missing firmware file}; shift 2 ;;
         --accel) accel=${2:?missing accelerator}; shift 2 ;;
+        --cpu) cpu_type=${2:?missing CPU model}; shift 2 ;;
         --memory) memory=${2:?missing memory size}; shift 2 ;;
         --smp) smp=${2:?missing CPU count}; shift 2 ;;
         --timeout) timeout_sec=${2:?missing timeout in seconds}; shift 2 ;;
@@ -153,12 +156,12 @@ detect_accelerator() {
         fi
     fi
 
-    if [[ "$accel" == "hvf" || "$accel" == "kvm" ]]; then
-        cpu_type="host"
-    elif [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
-        cpu_type="host"
-    else
-        cpu_type="max"
+    if [[ -z "$cpu_type" || "$cpu_type" == "auto" ]]; then
+        if [[ "$accel" == "hvf" || "$accel" == "kvm" ]]; then
+            cpu_type="host"
+        else
+            cpu_type="max"
+        fi
     fi
 }
 
