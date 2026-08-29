@@ -20,10 +20,6 @@ on:
       - '.github/workflows/build-publish.yml'
   workflow_dispatch:
     inputs:
-      copr_project:
-        description: COPR project to publish to
-        required: false
-        default: dragon-q8b-staging
       packages:
         description: Packages to build (auto, all, or comma/space-separated list)
         required: false
@@ -157,32 +153,30 @@ jobs:
           umask 077
           mkdir -p "$HOME/.config"
           printf '%s\n' "$COPR_CONFIG_SECRET" > "$HOME/.config/copr"
-      - name: Publish to staging or selected COPR project
+      - name: Publish to staging COPR project
         if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_OWNER: ${{ secrets.COPR_OWNER }}
-          REQUESTED_PROJECT: ${{ inputs.copr_project }}
         run: |
           test -n "$COPR_OWNER" || {
             echo 'COPR_OWNER GitHub secret is required for scheduled/manual publishing' >&2
             exit 1
           }
-          project=${REQUESTED_PROJECT:-dragon-q8b-staging}
+          staging_project="dragon-q8b-staging"
           dnf -y install copr-cli python3-copr
           bash scripts/submit-copr-builds.sh \
-            --project "$COPR_OWNER/$project" \
+            --project "$COPR_OWNER/$staging_project" \
             --chroot "fedora-${FEDORA_RELEASE}-aarch64" \
             --srpm-dir "$RUNNER_TEMP/srpms"
       - name: Run Fedora QEMU E2E validation against staging build
         if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_OWNER: ${{ secrets.COPR_OWNER }}
-          REQUESTED_PROJECT: ${{ inputs.copr_project }}
         run: |
-          project=${REQUESTED_PROJECT:-dragon-q8b-staging}
+          staging_project="dragon-q8b-staging"
           mkdir -p "$RUNNER_TEMP/qemu-e2e"
           bash scripts/test-e2e-qemu.sh \
-            --copr "$COPR_OWNER/$project" \
+            --copr "$COPR_OWNER/$staging_project" \
             --output "$RUNNER_TEMP/qemu-e2e" \
             --timeout 900
       - name: Upload QEMU E2E test logs
@@ -196,16 +190,10 @@ jobs:
         if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_OWNER: ${{ secrets.COPR_OWNER }}
-          REQUESTED_PROJECT: ${{ inputs.copr_project }}
         run: |
-          staging_project=${REQUESTED_PROJECT:-dragon-q8b-staging}
           prod_project="dragon-q8b"
-          if [[ "$staging_project" != "$prod_project" ]]; then
-            echo "Promoting verified packages to production COPR project: $COPR_OWNER/$prod_project"
-            bash scripts/submit-copr-builds.sh \
-              --project "$COPR_OWNER/$prod_project" \
-              --chroot "fedora-${FEDORA_RELEASE}-aarch64" \
-              --srpm-dir "$RUNNER_TEMP/srpms"
-          else
-            echo "Build was submitted directly to $prod_project and validated via E2E tests."
-          fi
+          echo "Promoting verified packages to production COPR project: $COPR_OWNER/$prod_project"
+          bash scripts/submit-copr-builds.sh \
+            --project "$COPR_OWNER/$prod_project" \
+            --chroot "fedora-${FEDORA_RELEASE}-aarch64" \
+            --srpm-dir "$RUNNER_TEMP/srpms"

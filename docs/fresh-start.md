@@ -138,18 +138,9 @@ COPR_OWNER  = your COPR username
 COPR_CONFIG = complete contents of ~/.config/copr
 ```
 
-Then open **Actions → Build and publish Fedora Dragon Q8B packages → Run
-workflow** and select:
+You can trigger a build manually via **Actions → Build and publish Fedora Dragon Q8B packages → Run workflow**, or simply push to `main`.
 
-```text
-copr_project: dragon-q8b-staging
-```
-
-The workflow builds in a Fedora 44 container and submits to the selected
-aarch64 COPR chroot. A push to `main` publishes to the staging project,
-executes the automated Fedora QEMU aarch64 E2E validation test (`scripts/test-e2e-qemu.sh`),
-and on test success automatically publishes the verified build to the production
-`dragon-q8b` project.
+The workflow builds in a Fedora 44 container and submits packages to `dragon-q8b-staging`. It then executes the automated Fedora QEMU aarch64 E2E validation test (`scripts/test-e2e-qemu.sh`), and on test success automatically publishes the verified build to the production `dragon-q8b` project.
 
 You can also run the QEMU E2E test locally:
 
