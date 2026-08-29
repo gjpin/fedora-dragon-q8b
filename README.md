@@ -59,6 +59,11 @@ mkdir -p build/kernel build/srpms
 ./scripts/prepare-kernel-source.sh \
   --release 44 \
   --output build/kernel
+./scripts/check-patch-redundancy.sh \
+  --kernel-dir build/kernel/kernel \
+  --patch-dir build/kernel/dragon-q8b-patches \
+  --patch-list config/armbian-sc8280xp-edge-patches.list \
+  --output build/kernel/patch-status.tsv
 ./scripts/build-srpms.sh \
   --release 44 \
   --source-dir build/kernel/kernel \
@@ -69,6 +74,14 @@ mkdir -p build/kernel build/srpms
 The kernel build starts from Fedora's `kernel.spec`; it is not a Debian
 kernel repackaging. The custom release identifier is `.dragonq8b`, so stock
 Fedora kernels remain available as rollback entries.
+
+The redundancy report tests each patch against the post-Fedora-patch source.
+`FEDORA_PRESENT_EXACT` means Fedora already contains that exact change;
+`REQUIRED` means the exact change is not present and still applies;
+`COVERED_BY_Q8B_QUEUE` means an earlier Q8B patch already provides it; and
+`REVIEW_REQUIRED` stops the build for manual semantic review. `REQUIRED` is a
+repeatable patch-level result, not a guarantee that no semantically equivalent
+code exists, so semantic reworks should be reviewed before promotion.
 
 ## Hardware validation
 

@@ -35,14 +35,18 @@ data rather than an Ubuntu runtime.
    firmware, codec, VPU, and QPS615 markers. It then starts with Fedora's
    `kernel.spec`, downloads the pinned Armbian SC8280XP queue, verifies every
    digest, and declares the result as a Fedora `Patch3003`.
-3. The Fedora kernel config fragment enables the board's Qualcomm remoteproc,
+3. `check-patch-redundancy.sh` prepares an unmodified Fedora source tree,
+   applies Fedora's own kernel patch, and checks each Armbian patch in both
+   directions. It stops on patches that are partially upstream or otherwise
+   require semantic review.
+4. The Fedora kernel config fragment enables the board's Qualcomm remoteproc,
    PCIe/UFS/MMC, SoundWire/audio, DRM/display, Iris/VPU, networking, GPIO,
    serial, I²C, and SPI paths.
-4. The workflow builds source RPMs in Fedora 44 and submits them to the
+5. The workflow builds source RPMs in Fedora 44 and submits them to the
    staging COPR. The kernel build ID includes the workflow run number, so a
    rebuilt kernel cannot collide with an older COPR build that has the same
    upstream Fedora version.
-5. The source pins are updated only after source RPM generation succeeds. A
+6. The source pins are updated only after source RPM generation succeeds. A
    maintainer must validate the physical board before promoting staging to the
    production COPR project.
 
