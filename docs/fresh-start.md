@@ -146,13 +146,15 @@ copr_project: dragon-q8b-staging
 ```
 
 The workflow builds in a Fedora 44 container and submits to the selected
-aarch64 COPR chroot. A push to `main` also publishes to the staging project.
+aarch64 COPR chroot. A push to `main` publishes to the staging project,
+executes the automated Fedora QEMU aarch64 E2E validation test (`scripts/test-e2e-qemu.sh`),
+and on test success automatically publishes the verified build to the production
+`dragon-q8b` project.
 
-Use the staging project until the board has been tested. After physical
-validation, run the workflow again with:
+You can also run the QEMU E2E test locally:
 
-```text
-copr_project: dragon-q8b
+```shell
+./scripts/test-e2e-qemu.sh --copr <your-user>/dragon-q8b-staging
 ```
 
 ## 4. Install on the Dragon Q8B

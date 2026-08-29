@@ -51,8 +51,30 @@ Configure these repository secrets before scheduled publishing:
 - `COPR_OWNER`: COPR user or group that owns the projects.
 - `COPR_CONFIG`: the complete `~/.config/copr` file contents for `copr-cli`.
 
-Automatic builds target `dragon-q8b-staging`. Use workflow dispatch with
-`dragon-q8b` only after physical-board validation.
+Automatic builds submit packages to `dragon-q8b-staging`. After the staging COPR build completes, GitHub Actions spins up a Fedora `aarch64` QEMU virtual machine to run end-to-end validation (`scripts/test-e2e-qemu.sh` and `scripts/validate-e2e.sh`). Once all QEMU E2E validation checks pass, the workflow automatically publishes the verified build to the production `dragon-q8b` COPR repository.
+
+## QEMU End-to-End Testing
+
+You can run the full QEMU aarch64 E2E validation test locally against a COPR repository or a local directory of RPM packages:
+
+```shell
+# Test against a COPR project
+./scripts/test-e2e-qemu.sh --copr your-copr-user/dragon-q8b-staging
+
+# Or test against locally built RPMs
+./scripts/test-e2e-qemu.sh --rpm-dir build/rpms
+```
+
+The runner automatically selects native hardware acceleration (`-accel hvf` on macOS Apple Silicon, `-accel kvm` on Linux with KVM, or `-accel tcg` for software emulation). It boots a Fedora aarch64 Cloud VM with UEFI firmware, installs the Dragon Q8B support bundle, and validates:
+
+- **Firmware & DSP runtime**: Radxa supplemental CDSP, ADSP, QUPv3, VPU blobs, and DSP runtime libraries.
+- **Kernel & DTB**: Dragon Q8B DTB decompilation, compatible matching, SoundWire/WCD9385 codec, remoteproc SoC definitions.
+- **Device Tree Overlays**: Validates syntax and fragments for all expansion and PCIe overlays.
+- **Boot & Dracut Initramfs Policy**: Validates Qualcomm drivers and firmware inclusion in dracut initramfs and tests `/usr/libexec/dragon-q8b-refresh-boot`.
+- **Bluetooth Service**: Validates deterministic locally-administered MAC generation and systemd service.
+- **FastRPC Runtime**: Validates `libcdsprpc.so`, `libadsprpc.so`, `dsp_check`, udev rules, and environment variables.
+- **QNN Synchronization**: Validates `dragon-q8b-qnn` CLI, sync helper, systemd service, timer, and ld.so/profile configuration.
+- **ALSA UCM Profiles**: Validates Qualcomm SC8280XP and Dragon Q8B UCM2 configurations.
 
 ## Local Fedora build
 

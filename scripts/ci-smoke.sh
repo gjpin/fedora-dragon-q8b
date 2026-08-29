@@ -134,6 +134,8 @@ rm -rf "$smoke_srpm_dir"
 
 bash scripts/prepare-kernel-source.sh --help >/dev/null
 bash scripts/build-srpms.sh --help >/dev/null
+bash scripts/validate-e2e.sh --help >/dev/null
+bash scripts/test-e2e-qemu.sh --help >/dev/null
 test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq 35
 echo "CI smoke test passed"
 EOF

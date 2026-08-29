@@ -58,11 +58,8 @@ install -Dpm0644 %{SOURCE2} %{buildroot}%{_sysconfdir}/profile.d/dragon-q8b-fast
 %{_bindir}/dsp_check
 %{_sbindir}/*
 %{_libdir}/lib*.so.*
-%{_unitdir}/*.service
-%{_sysusersdir}/*.conf
-%{_udevrulesdir}/*.rules
+%{_udevrulesdir}/60-dragon-q8b-fastrpc.rules
 %{_sysconfdir}/profile.d/dragon-q8b-fastrpc.sh
-%{_mandir}/man*/*
 
 %files devel
 %{_includedir}/*
