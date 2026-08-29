@@ -3,11 +3,11 @@
 Fedora support and bootstrap tooling for the Radxa Dragon Q8B (Qualcomm
 SC8280XP / Snapdragon 8cx Gen 3).
 
-This project builds a Fedora kernel from the current stable Fedora kernel
-source, carries the Q8B/SC8280XP board patch series, packages Radxa's
-supplemental firmware, and publishes every custom RPM through COPR. Radxa OS
-is the primary compatibility reference; Armbian's SC8280XP edge patches are a
-pinned secondary source for kernel changes.
+This project builds a Fedora kernel from Fedora's kernel source, carries the
+Q8B/SC8280XP board patch series, packages Radxa's supplemental firmware, and
+publishes every custom RPM through COPR. Radxa OS is the primary compatibility
+reference; Armbian's SC8280XP edge patches are a pinned secondary source for
+kernel changes.
 
 ## Install on a Dragon Q8B
 
@@ -35,11 +35,16 @@ Use `--force` only for packaging tests. A real board should identify itself as
 
 ## COPR and GitHub Actions
 
-The daily workflow checks the Fedora kernel dist-git branch plus Radxa kernel,
-firmware, overlay, and Armbian source revisions. It is a no-op when all pins
-are current. When an input changes, it prepares Fedora source RPMs, verifies
-the 35 patch checksums, builds source RPMs, submits them to COPR, waits for
-the COPR builds, and opens a source-lock pull request.
+The scheduled refresh workflow checks Radxa kernel, firmware, overlays, ALSA
+UCM, and Armbian revisions. When one changes, it downloads and checksums the
+corresponding vendor inputs and opens a `bot/vendor-refresh` pull request.
+Build validation runs on the pull request; publishing runs only after the
+vendored inputs are merged.
+
+Large Radxa source archives use Git LFS. After cloning, run `git lfs install`
+and `git lfs pull` before building locally. The build uses the vendored
+Radxa/Armbian inputs, while Fedora supplies the kernel dist-git source,
+toolchain, and base RPM dependencies.
 
 Configure these repository secrets before scheduled publishing:
 
@@ -51,11 +56,14 @@ Automatic builds target `dragon-q8b-staging`. Use workflow dispatch with
 
 ## Local Fedora build
 
-Run these commands in Fedora or a Fedora container with `fedpkg`, `rpm-build`,
-`rpmdevtools`, `dtc`, and `ShellCheck` installed:
+Run these commands in Fedora or a Fedora container with `fedpkg`,
+`rpm-build`, `rpmdevtools`, `kernel-rpm-macros`, `python3-devel`, `make`,
+`gcc`, `flex`, `bison`, `openssl`, `dtc`, and `ShellCheck` installed:
 
 ```shell
 mkdir -p build/kernel build/srpms
+git lfs pull
+./scripts/validate-vendor.sh
 ./scripts/prepare-kernel-source.sh \
   --release 44 \
   --output build/kernel
@@ -72,8 +80,8 @@ mkdir -p build/kernel build/srpms
 ```
 
 The kernel build starts from Fedora's `kernel.spec`; it is not a Debian
-kernel repackaging. The custom release identifier is `.dragonq8b`, so stock
-Fedora kernels remain available as rollback entries.
+kernel repackaging. The custom release identifier is `.dragonq8b.<run>`, so
+stock Fedora kernels remain available as rollback entries.
 
 The redundancy report tests each patch against the post-Fedora-patch source.
 `FEDORA_PRESENT_EXACT` means Fedora already contains that exact change;

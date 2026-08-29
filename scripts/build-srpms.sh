@@ -17,6 +17,7 @@ source "$repo_root/config/dragon-q8b.env"
 RADXA_FIRMWARE_REF=${RADXA_FIRMWARE_REF_OVERRIDE:-$RADXA_FIRMWARE_REF}
 RADXA_FIRMWARE_VERSION=${RADXA_FIRMWARE_VERSION_OVERRIDE:-$RADXA_FIRMWARE_VERSION}
 RADXA_OVERLAYS_REF=${RADXA_OVERLAYS_REF_OVERRIDE:-$RADXA_OVERLAYS_REF}
+ALSA_UCM_VERSION=${ALSA_UCM_VERSION_OVERRIDE:-$ALSA_UCM_VERSION}
 PACKAGE_RELEASE=${PACKAGE_RELEASE_OVERRIDE:-1}
 [[ "$PACKAGE_RELEASE" =~ ^[0-9][A-Za-z0-9._+]*$ ]] || {
     echo "invalid PACKAGE_RELEASE_OVERRIDE: $PACKAGE_RELEASE" >&2
@@ -40,7 +41,7 @@ done
 [[ -n "$output" ]] || { usage >&2; exit 2; }
 echo "Building source RPMs for Fedora $release"
 
-for command in rpmbuild rpmspec spectool fedpkg; do
+for command in rpmbuild rpmspec fedpkg; do
     command -v "$command" >/dev/null || {
         echo "missing required command: $command" >&2
         exit 1
@@ -66,7 +67,7 @@ find "$source_dir" -maxdepth 1 -type f \
 # Run Fedora's %prep first so the SRPM-producing job catches conflicts between
 # Fedora's own patch and the Q8B queue instead of deferring that failure to
 # the COPR binary build.
-rpmbuild -bp --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
+rpmbuild -bp --nodeps --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
 rpmbuild -bs --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
 cp "$topdir"/SRPMS/*.src.rpm "$output/"
 
@@ -87,13 +88,26 @@ for package_dir in firmware boot overlays alsa meta kernel-meta; do
     if [[ "$package_dir" == overlays ]]; then
         sed -i "s/^%global overlays_ref .*/%global overlays_ref $RADXA_OVERLAYS_REF/" "$topdir/SPECS/$spec_name"
     fi
+    if [[ "$package_dir" == firmware ]]; then
+        cp "$repo_root/vendor/radxa/firmware/radxa-firmware-${RADXA_FIRMWARE_REF}.tar.gz" \
+            "$topdir/SOURCES/"
+    fi
+    if [[ "$package_dir" == overlays ]]; then
+        cp "$repo_root/vendor/radxa/overlays/radxa-overlays-${RADXA_OVERLAYS_REF}.tar.gz" \
+            "$topdir/SOURCES/"
+    fi
+    if [[ "$package_dir" == alsa ]]; then
+        cp "$repo_root/vendor/radxa/alsa/alsa-ucm-conf_${ALSA_UCM_VERSION}_all.deb" \
+            "$topdir/SOURCES/"
+        sed -i "s/^%global alsa_ucm_version .*/%global alsa_ucm_version $ALSA_UCM_VERSION/" \
+            "$topdir/SPECS/$spec_name"
+    fi
     if [[ "$package_dir" == kernel-meta ]]; then
-        kernel_version=$(rpmspec --qf '%{VERSION}\n' "$topdir/SPECS/kernel.spec" | awk 'NR == 1 {value=$0} END {print value}')
-        kernel_release=$(rpmspec --qf '%{RELEASE}\n' "$topdir/SPECS/kernel.spec" | awk 'NR == 1 {value=$0} END {print value}')
+        kernel_version=$(rpmspec --query --queryformat '%{VERSION}\n' "$topdir/SPECS/kernel.spec" | awk 'NR == 1 {value=$0} END {print value}')
+        kernel_release=$(rpmspec --query --queryformat '%{RELEASE}\n' "$topdir/SPECS/kernel.spec" | awk 'NR == 1 {value=$0} END {print value}')
         sed -i "s/^%global kernel_need_version .*/%global kernel_need_version $kernel_version/" "$topdir/SPECS/$spec_name"
         sed -i "s/^%global kernel_need_release .*/%global kernel_need_release $kernel_release/" "$topdir/SPECS/$spec_name"
     fi
-    spectool -g -C "$topdir/SOURCES" "$topdir/SPECS/$spec_name"
     rpmbuild -bs --define "_topdir $topdir" "$topdir/SPECS/$spec_name"
     cp "$topdir"/SRPMS/*.src.rpm "$output/"
 done

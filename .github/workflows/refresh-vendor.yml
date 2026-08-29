@@ -1,0 +1,66 @@
+name: Refresh vendored Dragon Q8B inputs
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dragon-q8b-vendor-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container: fedora:44
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          lfs: false
+      - name: Install refresh tools
+        run: |
+          dnf -y install \
+            bash coreutils curl git git-lfs jq binutils ShellCheck tar xz gh
+          git lfs install --local
+          git lfs pull
+      - name: Refresh and validate vendored inputs
+        run: |
+          branch='bot/vendor-refresh'
+          git fetch origin main
+          git switch -C "$branch" origin/main
+          bash scripts/refresh-vendor.sh --output "$RUNNER_TEMP/current-inputs.env"
+          bash scripts/validate-vendor.sh
+          shellcheck scripts/*.sh \
+            packaging/boot/dragon-q8b-bt-address \
+            packaging/boot/dragon-q8b-refresh-boot
+          git diff --check
+      - name: Open or update vendor refresh pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch='bot/vendor-refresh'
+          if git status --short --untracked-files=all -- \
+              vendor config/dragon-q8b.env \
+              config/armbian-sc8280xp-edge-patches.sha256 packaging/inputs.lock | \
+              grep -q .; then
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add vendor config/dragon-q8b.env \
+              config/armbian-sc8280xp-edge-patches.sha256 packaging/inputs.lock
+            git commit -m 'chore: refresh vendored Dragon Q8B inputs'
+            git push --force-with-lease origin "HEAD:$branch"
+            gh pr create \
+              --base main \
+              --head "$branch" \
+              --title 'chore: refresh vendored Dragon Q8B inputs' \
+              --body 'Generated from the current Radxa, Armbian, and ALSA inputs. CI builds this exact vendored snapshot with Fedora kernel sources; review kernel changes and validate hardware before merging.' \
+              || true
+          else
+            echo 'Vendored inputs are already current.'
+          fi

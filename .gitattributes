@@ -1,0 +1,2 @@
+vendor/radxa/**/*.tar.gz filter=lfs diff=lfs merge=lfs -text
+vendor/radxa/**/*.deb filter=lfs diff=lfs merge=lfs -text

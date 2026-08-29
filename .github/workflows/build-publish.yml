@@ -1,0 +1,131 @@
+name: Build and publish Fedora Dragon Q8B packages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.gitattributes'
+      - 'config/**'
+      - 'packaging/**'
+      - 'scripts/**'
+      - 'vendor/**'
+      - '.github/workflows/build-publish.yml'
+  pull_request:
+    paths:
+      - '.gitattributes'
+      - 'config/**'
+      - 'packaging/**'
+      - 'scripts/**'
+      - 'vendor/**'
+      - '.github/workflows/build-publish.yml'
+  workflow_dispatch:
+    inputs:
+      copr_project:
+        description: COPR project to publish to
+        required: false
+        default: dragon-q8b-staging
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    container: fedora:44
+    env:
+      FEDORA_RELEASE: 44
+      KERNEL_BUILD_ID_OVERRIDE: dragonq8b.${{ github.run_number }}
+      PACKAGE_RELEASE_OVERRIDE: 1.${{ github.run_number }}
+      EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+      - name: Install Fedora build tools and materialize LFS inputs
+        run: |
+          dnf -y install \
+            bash coreutils git git-lfs findutils grep sed awk \
+            fedpkg fedora-packager \
+            rpm-build rpmdevtools kernel-rpm-macros python3-devel \
+            make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck
+          git lfs install --local
+          git lfs pull
+      - name: Validate shell, vendored inputs, and specs
+        run: |
+          bash scripts/validate-vendor.sh
+          shellcheck scripts/*.sh \
+            packaging/boot/dragon-q8b-bt-address \
+            packaging/boot/dragon-q8b-refresh-boot
+          for spec in packaging/*/*.spec; do
+            rpmspec --parse "$spec" >/dev/null
+          done
+          bash scripts/prepare-kernel-source.sh --help
+          bash scripts/build-srpms.sh --help
+          test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq 35
+      - name: Prepare Fedora kernel source
+        run: |
+          mkdir -p "$RUNNER_TEMP/prepared-kernel"
+          bash scripts/prepare-kernel-source.sh \
+            --release "$FEDORA_RELEASE" \
+            --output "$RUNNER_TEMP/prepared-kernel"
+      - name: Check Fedora patch redundancy
+        run: |
+          bash scripts/check-patch-redundancy.sh \
+            --kernel-dir "$RUNNER_TEMP/prepared-kernel/kernel" \
+            --patch-dir "$RUNNER_TEMP/prepared-kernel/dragon-q8b-patches" \
+            --patch-list config/armbian-sc8280xp-edge-patches.list \
+            --output "$RUNNER_TEMP/prepared-kernel/patch-status.tsv"
+      - name: Upload patch redundancy report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: patch-status-${{ github.run_id }}
+          path: ${{ runner.temp }}/prepared-kernel/patch-status.tsv
+          if-no-files-found: ignore
+      - name: Build source RPMs
+        run: |
+          mkdir -p "$RUNNER_TEMP/srpms"
+          bash scripts/build-srpms.sh \
+            --release "$FEDORA_RELEASE" \
+            --source-dir "$RUNNER_TEMP/prepared-kernel/kernel" \
+            --output "$RUNNER_TEMP/srpms"
+          bash scripts/validate-srpms.sh "$RUNNER_TEMP/srpms"
+      - name: Upload source RPMs and metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dragon-q8b-srpms-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/srpms/*.src.rpm
+            ${{ runner.temp }}/prepared-kernel/source-metadata.env
+            ${{ runner.temp }}/prepared-kernel/patch-status.tsv
+            ${{ runner.temp }}/prepared-kernel/armbian-sc8280xp-edge-patches.sha256
+          if-no-files-found: error
+      - name: Configure COPR credentials
+        if: env.EVENT_NAME != 'pull_request'
+        env:
+          COPR_CONFIG_SECRET: ${{ secrets.COPR_CONFIG }}
+        run: |
+          test -n "$COPR_CONFIG_SECRET" || {
+            echo 'COPR_CONFIG GitHub secret is required for scheduled/manual publishing' >&2
+            exit 1
+          }
+          umask 077
+          mkdir -p "$HOME/.config"
+          printf '%s\n' "$COPR_CONFIG_SECRET" > "$HOME/.config/copr"
+      - name: Publish to staging or selected COPR project
+        if: env.EVENT_NAME != 'pull_request'
+        env:
+          COPR_OWNER: ${{ secrets.COPR_OWNER }}
+          REQUESTED_PROJECT: ${{ inputs.copr_project }}
+        run: |
+          test -n "$COPR_OWNER" || {
+            echo 'COPR_OWNER GitHub secret is required for scheduled/manual publishing' >&2
+            exit 1
+          }
+          project=${REQUESTED_PROJECT:-dragon-q8b-staging}
+          dnf -y install copr-cli
+          bash scripts/submit-copr-builds.sh \
+            --project "$COPR_OWNER/$project" \
+            --chroot "fedora-${FEDORA_RELEASE}-aarch64" \
+            --srpm-dir "$RUNNER_TEMP/srpms"

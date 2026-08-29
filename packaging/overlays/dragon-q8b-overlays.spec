@@ -13,7 +13,7 @@ BuildRequires:  dtc
 BuildRequires:  gcc
 BuildRequires:  kernel-devel
 
-Source0:        https://github.com/radxa-pkg/radxa-overlays/archive/%{radxa_overlays_ref}.tar.gz
+Source0:        radxa-overlays-%{radxa_overlays_ref}.tar.gz
 
 %description
 Device-tree overlays for the Dragon Q8B expansion headers and optional FPC

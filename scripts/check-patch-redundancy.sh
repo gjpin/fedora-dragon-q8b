@@ -70,26 +70,29 @@ rpmbuild_topdir="$work_dir/rpmbuild"
 
 # The prepared kernel checkout has a modified working tree. A local clone
 # gives us the exact Fedora commit and its original kernel.spec without
-# downloading or trusting a second Fedora revision.
+# acquiring or trusting a second Fedora revision.
 echo "Creating stock Fedora dist-git checkout"
 git clone --quiet --local "$kernel_dir" "$stock_dir"
+# A local clone inherits a local-path origin, which prevents fedpkg from
+# resolving Fedora's namespace for the lookaside cache.
+git -C "$stock_dir" remote set-url origin https://src.fedoraproject.org/rpms/kernel.git
 fedora_commit=$(git -C "$stock_dir" rev-parse HEAD)
 
+mkdir -p "$rpmbuild_topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 echo "Fetching Fedora sources listed by the stock kernel.spec"
 (cd "$stock_dir" && fedpkg sources)
 
-mkdir -p "$rpmbuild_topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 cp "$stock_dir/kernel.spec" "$rpmbuild_topdir/SPECS/kernel.spec"
 find "$stock_dir" -maxdepth 1 -type f ! -name kernel.spec \
     -exec cp -n {} "$rpmbuild_topdir/SOURCES/" \;
 
 echo "Applying Fedora's own kernel patches"
-rpmbuild -bp \
+rpmbuild -bp --nodeps \
     --define "_topdir $rpmbuild_topdir" \
     "$rpmbuild_topdir/SPECS/kernel.spec"
 
 mapfile -t base_trees < <(
-    find "$rpmbuild_topdir/BUILD" -mindepth 1 -maxdepth 1 -type d -name 'linux-*' -print
+    find "$rpmbuild_topdir/BUILD" -type d -name 'linux-*' -print
 )
 [[ ${#base_trees[@]} -eq 1 ]] || die "expected one prepared Linux source tree, found ${#base_trees[@]}"
 base_tree=${base_trees[0]}

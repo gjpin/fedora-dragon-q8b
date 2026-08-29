@@ -12,7 +12,7 @@ License:        Redistributable, see LICENSE
 URL:            https://github.com/radxa-pkg/radxa-firmware
 BuildArch:      noarch
 
-Source0:        https://github.com/radxa-pkg/radxa-firmware/archive/%{radxa_firmware_ref}.tar.gz
+Source0:        radxa-firmware-%{radxa_firmware_ref}.tar.gz
 
 %description
 Supplemental SC8280XP and Dragon Q8B firmware from Radxa. Fedora's generic

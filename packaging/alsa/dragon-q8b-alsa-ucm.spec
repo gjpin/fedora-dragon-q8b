@@ -12,7 +12,7 @@ Requires:       alsa-ucm
 BuildRequires:  binutils
 BuildRequires:  tar
 
-Source0:        https://github.com/radxa-pkg/alsa-ucm-conf/releases/download/%{alsa_ucm_version}/alsa-ucm-conf_%{alsa_ucm_version}_all.deb
+Source0:        alsa-ucm-conf_%{alsa_ucm_version}_all.deb
 
 %description
 Installs the Radxa Dragon Q8B Qualcomm SC8280XP UCM profiles as an /etc
