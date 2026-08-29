@@ -18,6 +18,7 @@ RADXA_FIRMWARE_REF=${RADXA_FIRMWARE_REF_OVERRIDE:-$RADXA_FIRMWARE_REF}
 RADXA_FIRMWARE_VERSION=${RADXA_FIRMWARE_VERSION_OVERRIDE:-$RADXA_FIRMWARE_VERSION}
 RADXA_OVERLAYS_REF=${RADXA_OVERLAYS_REF_OVERRIDE:-$RADXA_OVERLAYS_REF}
 ALSA_UCM_VERSION=${ALSA_UCM_VERSION_OVERRIDE:-$ALSA_UCM_VERSION}
+FASTRPC_REF=${FASTRPC_REF_OVERRIDE:-$FASTRPC_REF}
 PACKAGE_RELEASE=${PACKAGE_RELEASE_OVERRIDE:-1}
 [[ "$PACKAGE_RELEASE" =~ ^[0-9][A-Za-z0-9._+]*$ ]] || {
     echo "invalid PACKAGE_RELEASE_OVERRIDE: $PACKAGE_RELEASE" >&2
@@ -71,7 +72,7 @@ rpmbuild -bp --nodeps --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
 rpmbuild -bs --define "_topdir $topdir" "$topdir/SPECS/kernel.spec"
 cp "$topdir"/SRPMS/*.src.rpm "$output/"
 
-for package_dir in firmware boot overlays alsa meta kernel-meta; do
+for package_dir in firmware boot overlays alsa fastrpc qnn meta kernel-meta; do
     spec_dir="$repo_root/packaging/$package_dir"
     [[ -d "$spec_dir" ]] || continue
     spec=$(find "$spec_dir" -maxdepth 1 -name '*.spec' -print -quit)
@@ -88,6 +89,9 @@ for package_dir in firmware boot overlays alsa meta kernel-meta; do
     if [[ "$package_dir" == overlays ]]; then
         sed -i "s/^%global overlays_ref .*/%global overlays_ref $RADXA_OVERLAYS_REF/" "$topdir/SPECS/$spec_name"
     fi
+    if [[ "$package_dir" == fastrpc ]]; then
+        sed -i "s/^%global fastrpc_ref .*/%global fastrpc_ref $FASTRPC_REF/" "$topdir/SPECS/$spec_name"
+    fi
     if [[ "$package_dir" == firmware ]]; then
         cp "$repo_root/vendor/radxa/firmware/radxa-firmware-${RADXA_FIRMWARE_REF}.tar.gz" \
             "$topdir/SOURCES/"
@@ -101,6 +105,10 @@ for package_dir in firmware boot overlays alsa meta kernel-meta; do
             "$topdir/SOURCES/"
         sed -i "s/^%global alsa_ucm_version .*/%global alsa_ucm_version $ALSA_UCM_VERSION/" \
             "$topdir/SPECS/$spec_name"
+    fi
+    if [[ "$package_dir" == fastrpc ]]; then
+        cp "$repo_root/vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz" \
+            "$topdir/SOURCES/"
     fi
     if [[ "$package_dir" == kernel-meta ]]; then
         kernel_version=$(rpmspec --query --queryformat '%{VERSION}\n' "$topdir/SPECS/kernel.spec" | awk 'NR == 1 {value=$0} END {print value}')

@@ -85,7 +85,8 @@ radxa_kernel_ref=$(resolve_ref "$RADXA_KERNEL_REPO" "refs/heads/$RADXA_KERNEL_BR
 radxa_firmware_ref=$(resolve_ref "$RADXA_FIRMWARE_REPO" refs/heads/main)
 radxa_overlays_ref=$(resolve_ref "$RADXA_OVERLAYS_REPO" refs/heads/main)
 armbian_ref=$(resolve_ref "$ARMBIAN_BUILD_REPO" refs/heads/main)
-for value_name in radxa_kernel_ref radxa_firmware_ref radxa_overlays_ref armbian_ref; do
+fastrpc_ref=$(resolve_ref "$FASTRPC_REPO" refs/heads/main)
+for value_name in radxa_kernel_ref radxa_firmware_ref radxa_overlays_ref armbian_ref fastrpc_ref; do
     [[ -n "${!value_name}" ]] || {
         echo "could not resolve $value_name" >&2
         exit 1
@@ -123,6 +124,15 @@ download "${RADXA_OVERLAYS_REPO%.git}/archive/${radxa_overlays_ref}.tar.gz" \
 tar -tzf "$overlays_archive" >/dev/null
 archive_has_license "$overlays_archive" || {
     echo "Radxa overlays archive has no license file" >&2
+    exit 1
+}
+
+fastrpc_archive="$stage/vendor/qualcomm/fastrpc/fastrpc-${fastrpc_ref}.tar.gz"
+download "${FASTRPC_REPO%.git}/archive/${fastrpc_ref}.tar.gz" \
+    "$fastrpc_archive"
+tar -tzf "$fastrpc_archive" >/dev/null
+archive_has_license "$fastrpc_archive" || {
+    echo "Qualcomm FastRPC archive has no license file" >&2
     exit 1
 }
 
@@ -174,6 +184,7 @@ replace_config "$config_file" RADXA_FIRMWARE_REF "$radxa_firmware_ref"
 replace_config "$config_file" RADXA_OVERLAYS_REF "$radxa_overlays_ref"
 replace_config "$config_file" ARMBIAN_REF "$armbian_ref"
 replace_config "$config_file" ALSA_UCM_VERSION "$alsa_version"
+replace_config "$config_file" FASTRPC_REF "$fastrpc_ref"
 
 manifest="$stage/vendor/SHA256SUMS"
 (cd "$stage" && find vendor -type f ! -path vendor/SHA256SUMS -print | LC_ALL=C sort | \
@@ -192,10 +203,12 @@ ALSA_UCM_DEB=$(basename "$alsa_deb")
 ALSA_UCM_DEB_SHA256=$(sha256_file "$alsa_deb")
 ARMBIAN_REF=$armbian_ref
 PATCH_MANIFEST_SHA256=$(sha256_file "$patch_manifest")
+FASTRPC_REF=$fastrpc_ref
+FASTRPC_ARCHIVE_SHA256=$(sha256_file "$fastrpc_archive")
 EOF
 
 mkdir -p "$repo_root/vendor"
-for component in radxa armbian; do
+for component in radxa armbian qualcomm; do
     rm -rf "$repo_root/vendor/$component"
     cp -a "$stage/vendor/$component" "$repo_root/vendor/"
 done

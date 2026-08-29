@@ -103,6 +103,12 @@ echo "Installing Fedora and Dragon Q8B packages"
 
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || :
+    if systemctl list-unit-files dragon-q8b-bt.service >/dev/null 2>&1; then
+        systemctl enable dragon-q8b-bt.service || warn "could not enable dragon-q8b-bt.service"
+    fi
+    if systemctl list-unit-files dragon-q8b-qnn.timer >/dev/null 2>&1; then
+        systemctl enable dragon-q8b-qnn.timer || warn "could not enable dragon-q8b-qnn.timer"
+    fi
     if systemctl list-unit-files bluetooth.service >/dev/null 2>&1; then
         systemctl enable bluetooth.service || warn "could not enable bluetooth.service"
     fi

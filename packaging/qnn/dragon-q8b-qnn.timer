@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Qualcomm QNN SDK Auto-Update Timer
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

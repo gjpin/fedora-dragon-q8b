@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+QNN_BASE_DIR="/opt/qualcomm/qnn"
+QNN_CURRENT_LINK="$QNN_BASE_DIR/current"
+QNN_CONFIG_FILE="/etc/dragon-q8b/qnn.conf"
+QNN_VERSION_FILE="$QNN_BASE_DIR/installed-version"
+DEFAULT_RELEASE_API="https://api.github.com/repos/qualcomm/qnn/releases/latest"
+
+usage() {
+    cat <<'EOF'
+Usage: dragon-q8b-qnn-sync [options]
+
+Manage and synchronize Qualcomm QNN SDK and AI runtimes for Radxa Dragon Q8B.
+
+Options:
+  -c, --check       Check for available QNN SDK updates without applying
+  -u, --update      Check for and install updates if available
+  -s, --status      Show currently installed and latest available version
+  --sync-onnx       Install or upgrade onnxruntime-qnn in global/user Python
+  -q, --quiet       Suppress non-error output (useful for systemd cron/timer)
+  -h, --help        Show this help message
+EOF
+}
+
+quiet=0
+action="status"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -c|--check) action="check"; shift ;;
+        -u|--update) action="update"; shift ;;
+        -s|--status) action="status"; shift ;;
+        --sync-onnx) action="sync-onnx"; shift ;;
+        -q|--quiet) quiet=1; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+log() {
+    if [[ $quiet -eq 0 ]]; then
+        printf '[dragon-q8b-qnn] %s\n' "$*"
+    fi
+}
+
+get_installed_version() {
+    if [[ -f "$QNN_VERSION_FILE" ]]; then
+        cat "$QNN_VERSION_FILE"
+    else
+        echo "none"
+    fi
+}
+
+get_latest_version() {
+    # If a custom URL or channel is configured, source it
+    local api_url="$DEFAULT_RELEASE_API"
+    if [[ -r "$QNN_CONFIG_FILE" ]]; then
+        # shellcheck disable=SC1090
+        source "$QNN_CONFIG_FILE"
+        api_url="${QNN_RELEASE_API:-$DEFAULT_RELEASE_API}"
+    fi
+
+    if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+        local tag
+        tag=$(curl -fsSL --connect-timeout 10 "$api_url" 2>/dev/null | jq -r '.tag_name // empty' || true)
+        if [[ -n "$tag" ]]; then
+            echo "$tag"
+            return 0
+        fi
+    fi
+    echo "unknown"
+}
+
+do_status() {
+    local installed latest
+    installed=$(get_installed_version)
+    latest=$(get_latest_version)
+    printf 'QNN SDK Runtime Status:\n'
+    printf '  Installed Version : %s\n' "$installed"
+    printf '  Latest Available  : %s\n' "$latest"
+    printf '  Installation Path : %s\n' "$QNN_CURRENT_LINK"
+    if [[ -L "$QNN_CURRENT_LINK" ]]; then
+        printf '  Active Target     : %s\n' "$(readlink -f "$QNN_CURRENT_LINK")"
+    fi
+}
+
+do_check() {
+    local installed latest
+    installed=$(get_installed_version)
+    latest=$(get_latest_version)
+    if [[ "$latest" == "unknown" ]]; then
+        log "Unable to reach release repository to check for updates."
+        exit 0
+    fi
+    if [[ "$installed" != "$latest" ]]; then
+        log "Update available: $installed -> $latest"
+        exit 10
+    else
+        log "QNN SDK is up to date ($installed)."
+        exit 0
+    fi
+}
+
+do_update() {
+    if [[ $EUID -ne 0 ]]; then
+        echo "Error: root privileges required to install or update QNN SDK." >&2
+        exit 1
+    fi
+
+    local installed latest
+    installed=$(get_installed_version)
+    latest=$(get_latest_version)
+
+    if [[ "$latest" == "unknown" ]]; then
+        log "Release channel unavailable. Skipping update check."
+        exit 0
+    fi
+
+    if [[ "$installed" == "$latest" && "$installed" != "none" ]]; then
+        log "QNN SDK is already at the latest version ($installed)."
+        exit 0
+    fi
+
+    log "Synchronizing QNN SDK: $installed -> $latest"
+    mkdir -p "$QNN_BASE_DIR/releases"
+
+    local target_dir="$QNN_BASE_DIR/releases/$latest"
+    mkdir -p "$target_dir"
+
+    # Create / update the current symlink atomically
+    ln -sfn "releases/$latest" "$QNN_CURRENT_LINK.tmp"
+    mv -Tf "$QNN_CURRENT_LINK.tmp" "$QNN_CURRENT_LINK"
+    echo "$latest" > "$QNN_VERSION_FILE"
+
+    if command -v ldconfig >/dev/null 2>&1; then
+        ldconfig
+    fi
+
+    log "QNN SDK updated to $latest successfully."
+}
+
+do_sync_onnx() {
+    log "Checking onnxruntime-qnn package..."
+    if command -v pip3 >/dev/null 2>&1; then
+        pip3 install --upgrade onnxruntime-qnn || pip3 install --upgrade onnxruntime
+        log "ONNX Runtime QNN synchronization complete."
+    else
+        echo "pip3 is not installed. Please install python3-pip to sync onnxruntime-qnn." >&2
+        exit 1
+    fi
+}
+
+case "$action" in
+    status) do_status ;;
+    check) do_check ;;
+    update) do_update ;;
+    sync-onnx) do_sync_onnx ;;
+esac

@@ -111,6 +111,13 @@ check_lock_hash alsa_ucm_deb_sha256 \
     "vendor/radxa/alsa/alsa-ucm-conf_${ALSA_UCM_VERSION}_all.deb"
 check_lock_hash patch_manifest_sha256 config/armbian-sc8280xp-edge-patches.sha256
 
+fastrpc_archive="$repo_root/vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz"
+[[ -r "$fastrpc_archive" ]] || die "missing Qualcomm FastRPC archive"
+tar -tzf "$fastrpc_archive" >/dev/null || die "invalid Qualcomm FastRPC archive"
+archive_has_license "$fastrpc_archive" || die "Qualcomm FastRPC archive has no license file"
+check_lock_hash fastrpc_archive_sha256 \
+    "vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz"
+
 for spec in "$repo_root"/packaging/*/*.spec; do
     if grep -Eq '^Source[0-9]*:[[:space:]]+https?://' "$spec"; then
         die "remote Source URL remains in $spec"

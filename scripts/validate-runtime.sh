@@ -29,7 +29,7 @@ check_dtb() {
 check 'device tree identifies Radxa Dragon Q8B' check_q8b_compatible
 for package in qrtr tqftpserv bluez alsa-ucm qcom-firmware dragon-q8b-support \
     dragon-q8b-kernel dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays \
-    dragon-q8b-alsa-ucm; do
+    dragon-q8b-alsa-ucm dragon-q8b-fastrpc dragon-q8b-qnn; do
     check "RPM $package is installed" check_package "$package"
 done
 

@@ -15,6 +15,7 @@ Source0:        dragon-q8b-bt-address
 Source1:        dragon-q8b-bt.conf
 Source2:        40-dragon-q8b.conf
 Source3:        dragon-q8b-refresh-boot
+Source4:        dragon-q8b-bt.service
 
 %description
 Installs the Dragon Q8B device-tree boot selection, Qualcomm firmware
@@ -29,12 +30,7 @@ install -Dpm0755 %{SOURCE0} %{buildroot}%{_libexecdir}/dragon-q8b-bt-address
 install -Dpm0644 %{SOURCE1} %{buildroot}%{_sysconfdir}/dragon-q8b/bluetooth.conf
 install -Dpm0644 %{SOURCE2} %{buildroot}%{_sysconfdir}/dracut.conf.d/40-dragon-q8b.conf
 install -Dpm0755 %{SOURCE3} %{buildroot}%{_libexecdir}/dragon-q8b-refresh-boot
-install -d %{buildroot}%{_sysconfdir}/systemd/system/bluetooth.service.d
-
-cat > %{buildroot}%{_sysconfdir}/systemd/system/bluetooth.service.d/dragon-q8b.conf <<'EOF'
-[Service]
-ExecStartPre=/usr/libexec/dragon-q8b-bt-address
-EOF
+install -Dpm0644 %{SOURCE4} %{buildroot}%{_unitdir}/dragon-q8b-bt.service
 
 %posttrans
 if [ -x %{_libexecdir}/dragon-q8b-refresh-boot ]; then
@@ -50,7 +46,7 @@ fi
 %files
 %config(noreplace) %{_sysconfdir}/dragon-q8b/bluetooth.conf
 %config(noreplace) %{_sysconfdir}/dracut.conf.d/40-dragon-q8b.conf
-%config(noreplace) %{_sysconfdir}/systemd/system/bluetooth.service.d/dragon-q8b.conf
+%{_unitdir}/dragon-q8b-bt.service
 %{_libexecdir}/dragon-q8b-bt-address
 %{_libexecdir}/dragon-q8b-refresh-boot
 

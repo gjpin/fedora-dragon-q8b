@@ -67,7 +67,7 @@ Build and validate the SRPMs:
 ./scripts/validate-srpms.sh build/srpms
 ```
 
-The output contains seven SRPMs: the Fedora `kernel` rebuild, four board
+The output contains nine SRPMs: the Fedora `kernel` rebuild, six board
 components, and two dependency meta-packages.
 
 ## 3. COPR
@@ -120,7 +120,7 @@ dependency-aware helper:
   --srpm-dir build/srpms
 ```
 
-The helper submits the kernel, firmware, boot, overlays, and ALSA packages
+The helper submits the kernel, firmware, boot, overlays, ALSA, FastRPC, and QNN packages
 first. It waits for those builds to finish before submitting
 `dragon-q8b-kernel` and `dragon-q8b-support`.
 

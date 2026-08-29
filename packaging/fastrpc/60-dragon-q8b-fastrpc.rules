@@ -1,0 +1,3 @@
+# FastRPC device nodes for Qualcomm Compute DSP (CDSP) and Audio DSP (ADSP)
+KERNEL=="fastrpc-[acm]dsp*", MODE="0666", GROUP="video"
+KERNEL=="adsprpc-smd*", MODE="0666", GROUP="video"

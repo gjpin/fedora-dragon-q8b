@@ -59,7 +59,7 @@ submit() {
 
 : > "$srpm_dir/copr-builds.env"
 core_ids=()
-for name in kernel dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays dragon-q8b-alsa-ucm; do
+for name in kernel dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays dragon-q8b-alsa-ucm dragon-q8b-fastrpc dragon-q8b-qnn; do
     if [[ -n "${srpms[$name]:-}" ]]; then
         core_ids+=("$(submit "$name")")
     fi

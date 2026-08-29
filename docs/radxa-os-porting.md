@@ -18,10 +18,12 @@ board. Its relevant platform contract is:
 | Storage | UFS, NVMe, and microSD | Fedora UFS, PCIe, MMC, and storage drivers built into or shipped by the kernel |
 | Ethernet | QPS615/TC9564 PCIe switch and two 2.5GbE ports | Q8B DT plus TC956X, XPCS, stmmac, and QCA808x changes from the pinned queue |
 | Expansion | Q8B GPIO/I²C/SPI/UART muxes | Radxa overlays compiled and shipped as `.dtbo` files |
-| Wi-Fi/Bluetooth | Qualcomm radio firmware and controller setup | Fedora firmware, `bluez`, and a deterministic locally-administered BT address |
+| Wi-Fi/Bluetooth | Qualcomm radio firmware and controller setup | Fedora firmware, `bluez`, and a deterministic locally-administered BT address via `dragon-q8b-bt.service` |
+| NPU / FastRPC | Hexagon DSP FastRPC runtime | Qualcomm open-source FastRPC libraries (`libcdsprpc`, `libadsprpc`), udev rules, and DSP library environment paths (`dragon-q8b-fastrpc`) |
+| AI Acceleration | Qualcomm QNN SDK & ONNX Runtime | Automated QNN synchronization service and timer (`dragon-q8b-qnn`), `onnxruntime-qnn` integration |
 
 Radxa's OS build is product/SoC oriented: it combines a board kernel, a
-firmware package, overlays, ALSA UCM, and a UEFI boot configuration. Fedora
+firmware package, overlays, ALSA UCM, FastRPC runtime, and a UEFI boot configuration. Fedora
 therefore keeps those concerns in separate RPMs and uses a meta-package to
 install the tested set together. Ubuntu `.deb` packages are not installed on
 Fedora; only the Radxa ALSA UCM data is repackaged because it is configuration
@@ -30,7 +32,7 @@ data rather than an Ubuntu runtime.
 ## Kernel refresh flow
 
 1. `refresh-vendor.sh` resolves the latest Radxa kernel, firmware, overlay,
-   ALSA UCM, and Armbian refs. It downloads those project-specific inputs,
+   ALSA UCM, FastRPC, and Armbian refs. It downloads those project-specific inputs,
    verifies them, and opens a pull request.
 2. `prepare-kernel-source.sh` starts with Fedora's current kernel dist-git
    source, checks the vendored Radxa DTS for Q8B-specific firmware, codec, VPU,
@@ -44,7 +46,7 @@ data rather than an Ubuntu runtime.
    PCIe/UFS/MMC, SoundWire/audio, DRM/display, Iris/VPU, networking, GPIO,
    serial, I²C, and SPI paths.
 5. Pull-request CI builds source RPMs in Fedora 44 from Fedora's kernel source
-   plus the vendored Radxa/Armbian inputs. After merge, the publishing workflow
+   plus the vendored Radxa/Armbian/Qualcomm inputs. After merge, the publishing workflow
    submits the same repository contents to the staging COPR. The kernel build
    ID includes the workflow run number, so a rebuilt kernel cannot collide with
    an older COPR build that has the same upstream Fedora version.
@@ -57,10 +59,10 @@ it is not silently rebased or partially applied.
 
 ## Deliberately deferred
 
-The proprietary QAI/NPU userspace stack is not included. It has a different
-licensing and userspace ABI surface from the kernel/firmware/board support
-needed for a Fedora server. It can be added later as a separately reviewed
-COPR package set.
+The proprietary higher-level QAI/SNPE model runtime userspace stack is not included.
+It has a different licensing surface from the open-source FastRPC libraries, kernel,
+firmware, and board support needed for a Fedora system. It can be added later as a
+separately reviewed COPR package set.
 
 ## References
 

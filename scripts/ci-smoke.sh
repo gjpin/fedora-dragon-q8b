@@ -60,7 +60,8 @@ dnf -y install \
     bash coreutils git git-lfs findutils grep sed awk \
     fedpkg fedora-packager \
     rpm-build rpmdevtools kernel-rpm-macros python3-devel \
-    make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck
+    make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck \
+    autoconf automake libtool libyaml-devel
 
 mkdir -p "$GITHUB_WORKSPACE"
 cp -a /src/. "$GITHUB_WORKSPACE/"
@@ -74,10 +75,14 @@ if [[ "$skip_lfs" -eq 0 ]]; then
 fi
 
 cd "$repo_root"
-bash -n scripts/*.sh packaging/boot/dragon-q8b-bt-address packaging/boot/dragon-q8b-refresh-boot
+bash -n scripts/*.sh \
+    packaging/boot/dragon-q8b-bt-address \
+    packaging/boot/dragon-q8b-refresh-boot \
+    packaging/qnn/dragon-q8b-qnn-sync
 shellcheck scripts/*.sh \
     packaging/boot/dragon-q8b-bt-address \
-    packaging/boot/dragon-q8b-refresh-boot
+    packaging/boot/dragon-q8b-refresh-boot \
+    packaging/qnn/dragon-q8b-qnn-sync
 bash scripts/validate-vendor.sh
 for spec in packaging/*/*.spec; do
     rpmspec --parse "$spec" >/dev/null
@@ -98,6 +103,15 @@ rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/drago
 cp packaging/alsa/dragon-q8b-alsa-ucm.spec "$smoke_rpm_topdir/SPECS/"
 cp "vendor/radxa/alsa/alsa-ucm-conf_${ALSA_UCM_VERSION}_all.deb" "$smoke_rpm_topdir/SOURCES/"
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-alsa-ucm.spec" >/dev/null
+
+cp packaging/fastrpc/dragon-q8b-fastrpc.spec "$smoke_rpm_topdir/SPECS/"
+find packaging/fastrpc -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
+cp "vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz" "$smoke_rpm_topdir/SOURCES/"
+rpmbuild -bs --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-fastrpc.spec" >/dev/null
+
+cp packaging/qnn/dragon-q8b-qnn.spec "$smoke_rpm_topdir/SPECS/"
+find packaging/qnn -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
+rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-qnn.spec" >/dev/null
 
 rm -rf "$smoke_rpm_topdir"
 

@@ -27,6 +27,8 @@ Requires:       dragon-q8b-firmware
 Requires:       dragon-q8b-boot
 Requires:       dragon-q8b-overlays
 Requires:       dragon-q8b-alsa-ucm
+Requires:       dragon-q8b-fastrpc
+Requires:       dragon-q8b-qnn
 
 %description
 Meta-package that installs the Fedora and COPR components required for the
