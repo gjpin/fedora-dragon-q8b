@@ -108,7 +108,26 @@ packages=(
 )
 
 echo "Installing Fedora and Dragon Q8B packages"
-"$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs "${packages[@]}"
+dnf_opts=(
+    --setopt=install_weak_deps=False
+    --setopt=nodocs=True
+    --setopt=max_parallel_downloads=1
+    --setopt=timeout=120
+    --setopt=retries=10
+)
+
+install_success=0
+for attempt in {1..5}; do
+    if "$dnf_cmd" -y install "${dnf_opts[@]}" "${packages[@]}"; then
+        install_success=1
+        break
+    else
+        echo "Package install attempt $attempt failed, retrying in 5s..."
+        sleep 5
+    fi
+done
+
+[[ $install_success -eq 1 ]] || die "Failed to install required packages after 5 attempts"
 
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || :

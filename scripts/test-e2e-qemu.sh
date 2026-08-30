@@ -329,7 +329,7 @@ if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
         bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --skip-dracut --copr "$copr_target"
     else
         echo "Installing dragon-q8b-support package via $dnf_cmd..."
-        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dragon-q8b-support
+        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs --setopt=max_parallel_downloads=1 --setopt=timeout=120 --setopt=retries=10 dragon-q8b-support
     fi
 elif [[ -d "$rpm_mount" ]] && compgen -G "$rpm_mount/*.rpm" >/dev/null; then
     echo "Installing local RPM packages from $rpm_mount..."
