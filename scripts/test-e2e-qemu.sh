@@ -374,8 +374,8 @@ write_files:
     content: |
       [Unit]
       Description=Dragon Q8B E2E Validation Runner
-      After=network-online.target cloud-final.service
-      Wants=network-online.target cloud-final.service
+      After=network-online.target
+      Wants=network-online.target
 
       [Service]
       Type=oneshot
@@ -391,8 +391,8 @@ write_files:
     content: |
       [Unit]
       Description=Dragon Q8B E2E Validation Runner
-      After=network-online.target cloud-final.service
-      Wants=network-online.target cloud-final.service
+      After=network-online.target
+      Wants=network-online.target
 
       [Service]
       Type=oneshot
