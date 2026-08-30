@@ -21,15 +21,21 @@ else
     address="02:${digest:0:2}:${digest:2:2}:${digest:4:2}:${digest:6:2}:${digest:8:2}"
 fi
 
+if [[ "${1:-}" == "--print" || "${1:-}" == "--get" || "${1:-}" == "-p" ]]; then
+    printf '%s\n' "$address"
+    exit 0
+fi
+
 if ! command -v btmgmt >/dev/null 2>&1; then
     log "btmgmt is not installed; leaving Bluetooth address unchanged"
     exit 0
 fi
 
-for attempt in {1..12}; do
-    [[ $attempt -eq 1 ]] || log "waiting for Bluetooth controller ($attempt/12)"
-    if btmgmt info >/dev/null 2>&1; then
-        if yes | btmgmt public-addr "$address" >/dev/null 2>&1; then
+for attempt in {1..5}; do
+    [[ $attempt -eq 1 ]] || log "waiting for Bluetooth controller ($attempt/5)"
+    if timeout 2 btmgmt info >/dev/null 2>&1; then
+        if timeout 2 btmgmt --index 0 public-addr "$address" >/dev/null 2>&1 || \
+           echo "yes" | timeout 2 btmgmt public-addr "$address" >/dev/null 2>&1; then
             log "configured public Bluetooth address $address"
             exit 0
         fi
