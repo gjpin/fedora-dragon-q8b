@@ -265,8 +265,10 @@ replace_config "$config_file" QAIRT_LICENSE_SHA256 "$qairt_license_sha256"
 replace_config "$config_file" QAIRT_TARGET "$qairt_target"
 replace_config "$config_file" QAIRT_DSP_ARCH "$qairt_dsp_arch"
 
+# SHA256SUMS covers staged source inputs only. vendor/README.md is human
+# documentation and must not be mixed into the integrity manifest.
 manifest="$stage/vendor/SHA256SUMS"
-(cd "$stage" && find vendor -type f ! -path vendor/SHA256SUMS -print | LC_ALL=C sort | \
+(cd "$stage" && find vendor -type f ! -path vendor/SHA256SUMS ! -name README.md -print | LC_ALL=C sort | \
     while IFS= read -r path; do sha256sum "$path"; done) > "$manifest"
 
 env_file="$work_dir/current-inputs.env"

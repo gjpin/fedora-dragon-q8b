@@ -17,8 +17,9 @@ runner remain external infrastructure dependencies.
 ## Original sources
 
 The revisions below are the sources used for the files currently in this
-directory. SHA-256 values are recorded in [`../packaging/inputs.lock`](../packaging/inputs.lock)
-and [`SHA256SUMS`](SHA256SUMS).
+directory. SHA-256 values for those source inputs are recorded in
+[`../packaging/inputs.lock`](../packaging/inputs.lock) and [`SHA256SUMS`](SHA256SUMS).
+This README is documentation only and is not checksummed.
 
 | Vendored files | Original source |
 | --- | --- |

@@ -47,6 +47,12 @@ archive_has_license() {
 
 manifest="$repo_root/vendor/SHA256SUMS"
 [[ -r "$manifest" ]] || die "missing vendor manifest: $manifest"
+if grep -Eq '(^|[[:space:]])vendor/README\.md$' "$manifest"; then
+    die "vendor/README.md is documentation and must not be listed in SHA256SUMS"
+fi
+listed=$(awk 'NF && $1 !~ /^#/ {print $2}' "$manifest" | LC_ALL=C sort)
+expected=$(cd "$repo_root" && find vendor -type f ! -path vendor/SHA256SUMS ! -name README.md -print | LC_ALL=C sort)
+[[ "$listed" == "$expected" ]] || die "SHA256SUMS does not match vendored source inputs"
 (cd "$repo_root" && sha256sum --check vendor/SHA256SUMS) || die "vendor checksum validation failed"
 
 radxa_dts="$repo_root/vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts"
