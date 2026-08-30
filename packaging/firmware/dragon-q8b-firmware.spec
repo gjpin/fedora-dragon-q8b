@@ -51,23 +51,6 @@ install -Dpm0644 "$license" %{buildroot}%{_licensedir}/%{name}/LICENSE
 
 rm -f q8b-firmware.files
 : > q8b-firmware.files
-append_filelist() {
-    relpath=$1
-    case "$relpath" in
-        lib/*)
-            printf '%%{_prefix}/%s\n' "$relpath" >> q8b-firmware.files
-            ;;
-        usr/share/*)
-            printf '%%{_datadir}/%s\n' "${relpath#usr/share/}" >> q8b-firmware.files
-            ;;
-        usr/*)
-            printf '/%s\n' "$relpath" >> q8b-firmware.files
-            ;;
-        *)
-            printf '/%s\n' "$relpath" >> q8b-firmware.files
-            ;;
-    esac
-}
 
 while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
@@ -90,20 +73,38 @@ while IFS= read -r line || [ -n "$line" ]; do
         echo "firmware path listed but missing from archive: $relpath" >&2
         exit 1
     fi
-    dest="%{buildroot}/$relpath"
+    case "$relpath" in
+        lib/*)
+            dest="%{buildroot}%{_prefix}/$relpath"
+            packaged="%{_prefix}/$relpath"
+            ;;
+        usr/share/*)
+            dest="%{buildroot}/$relpath"
+            packaged="%{_datadir}/${relpath#usr/share/}"
+            ;;
+        *)
+            dest="%{buildroot}/$relpath"
+            packaged="/$relpath"
+            ;;
+    esac
     if [ -d "$src" ]; then
         install -d "$dest"
         cp -a "$src"/. "$dest"/
     else
         install -Dpm0644 "$src" "$dest"
     fi
-    append_filelist "$relpath"
+    # Pass packaged paths as printf arguments. bash printf must not see
+    # an RPM macro in the format string (percent-brace is not a conversion).
+    printf '%%s\n' "$packaged" >> q8b-firmware.files
 done < %{SOURCE1}
 
 %files -f q8b-firmware.files
 %license %{_licensedir}/%{name}/LICENSE
 
 %changelog
+* Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.2.41-3
+- Write firmware file lists with printf %%s so RPM macros are not format strings.
+
 * Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.2.41-2
 - Install only Q8B firmware paths from config/firmware.files.
 

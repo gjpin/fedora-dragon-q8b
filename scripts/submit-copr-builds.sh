@@ -127,6 +127,75 @@ submit() {
     printf '%s\n' "$build_id"
 }
 
+# Watch COPR builds until they finish. Fail as soon as one fails so a broken
+# firmware package does not sit behind a long kernel build. Retry transient
+# non-JSON API responses from copr-cli/python-copr.
+watch_copr_builds() {
+    if [[ $# -eq 0 ]]; then
+        return 0
+    fi
+    echo "Waiting for COPR builds: $*"
+    python3 - "$@" <<'PYEOF'
+import sys
+import time
+
+from copr.v3 import Client
+from copr.v3.exceptions import CoprException
+
+try:
+    from requests.exceptions import RequestException
+except ImportError:
+    RequestException = OSError
+
+SUCCESS = {"succeeded", "skipped", "forked"}
+FAILURE = {"failed", "canceled"}
+POLL_SECONDS = 30
+MAX_BACKOFF = 60
+
+build_ids = [int(x) for x in sys.argv[1:]]
+client = Client.create_from_config_file()
+last_state = {}
+finished = {}
+backoff = 5
+
+print("Watching build(s): (this may be safely interrupted)", flush=True)
+while len(finished) < len(build_ids):
+    try:
+        now = time.strftime("%H:%M:%S", time.gmtime())
+        for build_id in build_ids:
+            if build_id in finished:
+                continue
+            build = client.build_proxy.get(build_id)
+            state = build.state
+            if last_state.get(build_id) != state:
+                print(f"  {now} Build {build_id}: {state}", flush=True)
+                last_state[build_id] = state
+            if state in SUCCESS:
+                finished[build_id] = state
+            elif state in FAILURE:
+                url = f"https://copr.fedorainfracloud.org/coprs/build/{build_id}"
+                pkg = ""
+                source = getattr(build, "source_package", None) or {}
+                if isinstance(source, dict):
+                    pkg = source.get("name") or ""
+                elif source is not None:
+                    pkg = getattr(source, "name", "") or ""
+                label = f"{pkg} " if pkg else ""
+                print(
+                    f"COPR build {build_id} {label}{state}: {url}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        backoff = 5
+        if len(finished) < len(build_ids):
+            time.sleep(POLL_SECONDS)
+    except (CoprException, RequestException, OSError, TimeoutError) as exc:
+        print(f"COPR API error (retrying in {backoff}s): {exc}", file=sys.stderr)
+        time.sleep(backoff)
+        backoff = min(MAX_BACKOFF, backoff * 2)
+PYEOF
+}
+
 : > "$srpm_dir/copr-builds.env"
 core_ids=()
 for name in kernel dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays dragon-q8b-alsa-ucm fastrpc dragon-q8b-qnn; do
@@ -139,15 +208,14 @@ for name in kernel dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays drago
 done
 
 if [[ ${#core_ids[@]} -gt 0 ]]; then
-    echo "Waiting for core COPR builds: ${core_ids[*]}"
-    $copr_cmd watch-build "${core_ids[@]}"
+    watch_copr_builds "${core_ids[@]}"
 fi
 
 if [[ -n "${srpms[dragon-q8b-kernel]:-}" ]]; then
     kernel_meta_id=$(submit dragon-q8b-kernel)
     if [[ -n "$kernel_meta_id" ]]; then
         echo "Waiting for dragon-q8b-kernel COPR build: $kernel_meta_id"
-        $copr_cmd watch-build "$kernel_meta_id"
+        watch_copr_builds "$kernel_meta_id"
     fi
 fi
 
@@ -155,7 +223,7 @@ if [[ -n "${srpms[dragon-q8b-support]:-}" ]]; then
     support_meta_id=$(submit dragon-q8b-support)
     if [[ -n "$support_meta_id" ]]; then
         echo "Waiting for dragon-q8b-support COPR build: $support_meta_id"
-        $copr_cmd watch-build "$support_meta_id"
+        watch_copr_builds "$support_meta_id"
     fi
 fi
 

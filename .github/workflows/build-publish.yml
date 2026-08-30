@@ -143,7 +143,7 @@ jobs:
             build_args+=(--source-dir "$RUNNER_TEMP/prepared-kernel/kernel")
           fi
           bash scripts/build-srpms.sh "${build_args[@]}"
-          bash scripts/validate-srpms.sh "$RUNNER_TEMP/srpms"
+          bash scripts/validate-srpms.sh --rebuild-firmware "$RUNNER_TEMP/srpms"
       - name: Upload source RPMs and metadata
         if: steps.detect_packages.outputs.has_changes == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

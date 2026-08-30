@@ -134,6 +134,15 @@ cp packaging/firmware/dragon-q8b-firmware.spec "$smoke_rpm_topdir/SPECS/"
 cp "vendor/radxa/firmware/radxa-firmware-${RADXA_FIRMWARE_REF}.tar.gz" "$smoke_rpm_topdir/SOURCES/"
 cp config/firmware.files "$smoke_rpm_topdir/SOURCES/"
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-firmware.spec" >/dev/null
+fw_rpm=$(find "$smoke_rpm_topdir/RPMS" -type f -name 'dragon-q8b-firmware-*.rpm' ! -name '*.src.rpm' -print -quit)
+[[ -n "$fw_rpm" ]]
+rpm -qpl "$fw_rpm" | grep -Fxq '/usr/lib/firmware/qcom/sc8280xp/radxa/dragon-q8b/qcadsp8280.mbn'
+rpm -qpl "$fw_rpm" | grep -Fxq '/usr/lib/firmware/qcom/sc8280xp/qccdsp8280.mbn'
+rpm -qpl "$fw_rpm" | grep -q '/usr/share/qcom/sc8280xp/radxa/dragon-q8b/dsp'
+if rpm -qpl "$fw_rpm" | grep -Eq 'qcdxkmsuc8280\.mbn|LENOVO/21BX'; then
+    echo "firmware RPM must not own Fedora qcom-firmware GPU ZAP paths" >&2
+    exit 1
+fi
 
 cp packaging/boot/dragon-q8b-boot.spec "$smoke_rpm_topdir/SPECS/"
 find packaging/boot -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
