@@ -86,11 +86,17 @@ dnf_cmd=$(command -v dnf5 || command -v dnf || true)
 [[ -n "$dnf_cmd" ]] || die "dnf or dnf5 is required"
 
 echo "Installing COPR integration for $copr_owner/$copr_project"
-if ! "$dnf_cmd" copr --help >/dev/null 2>&1; then
+copr_repo_url="https://copr.fedorainfracloud.org/coprs/${copr_owner}/${copr_project}/repo/fedora-${fedora_release:-44}/${copr_owner}-${copr_project}-fedora-${fedora_release:-44}.repo"
+mkdir -p /etc/yum.repos.d
+if curl -fsSL --retry 3 --connect-timeout 10 "$copr_repo_url" -o "/etc/yum.repos.d/_copr:${copr_owner}:${copr_project}.repo" 2>/dev/null; then
+    echo "Configured COPR repository via direct repo configuration"
+elif ! "$dnf_cmd" copr --help >/dev/null 2>&1; then
     "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf-plugins-core >/dev/null 2>&1 || \
-        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf5-plugins
+        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf5-plugins || true
+    "$dnf_cmd" -y copr enable "$copr_owner/$copr_project" || true
+else
+    "$dnf_cmd" -y copr enable "$copr_owner/$copr_project" || true
 fi
-"$dnf_cmd" -y copr enable "$copr_owner/$copr_project"
 
 packages=(
     qrtr

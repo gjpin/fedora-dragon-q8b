@@ -305,25 +305,31 @@ if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
     if [[ "$copr_target" != */* ]]; then
         copr_target="gjpin/$copr_target"
     fi
-    echo "Enabling COPR repository: $copr_target"
-    if ! command -v dnf >/dev/null 2>&1 && command -v dnf5 >/dev/null 2>&1; then
-        dnf_cmd=dnf5
-    else
-        dnf_cmd=dnf
-    fi
+    repo_owner="${copr_target%/*}"
+    repo_name="${copr_target#*/}"
+    fedora_ver=$(rpm -E '%{fedora}' 2>/dev/null || echo "44")
+    copr_repo_url="https://copr.fedorainfracloud.org/coprs/${repo_owner}/${repo_name}/repo/fedora-${fedora_ver}/${repo_owner}-${repo_name}-fedora-${fedora_ver}.repo"
     
-    if ! "$dnf_cmd" copr --help >/dev/null 2>&1; then
-        "$dnf_cmd" -y install dnf-plugins-core >/dev/null 2>&1 || "$dnf_cmd" -y install dnf5-plugins || true
-    fi
-    
-    "$dnf_cmd" -y copr enable "$copr_target" || "$dnf_cmd" copr enable -y "$copr_target"
+    mkdir -p /etc/yum.repos.d
+    for attempt in {1..5}; do
+        if curl -fsSL --retry 3 --connect-timeout 10 "$copr_repo_url" -o "/etc/yum.repos.d/_copr:${repo_owner}:${repo_name}.repo" 2>/dev/null; then
+            echo "Successfully configured COPR repository via direct repo download"
+            break
+        elif "$dnf_cmd" -y copr enable "$copr_target" 2>/dev/null || "$dnf_cmd" copr enable -y "$copr_target" 2>/dev/null; then
+            echo "Successfully enabled COPR repository via $dnf_cmd"
+            break
+        else
+            echo "COPR enable attempt $attempt failed, retrying in 3s..."
+            sleep 3
+        fi
+    done
     
     if [[ -x "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" ]]; then
         echo "Running bootstrap-fedora-dragon-q8b.sh from repository..."
         bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --skip-dracut --copr "$copr_target"
     else
         echo "Installing dragon-q8b-support package via $dnf_cmd..."
-        "$dnf_cmd" -y install dragon-q8b-support
+        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dragon-q8b-support
     fi
 elif [[ -d "$rpm_mount" ]] && compgen -G "$rpm_mount/*.rpm" >/dev/null; then
     echo "Installing local RPM packages from $rpm_mount..."
