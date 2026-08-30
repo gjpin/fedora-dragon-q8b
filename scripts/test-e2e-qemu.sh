@@ -300,6 +300,7 @@ fi
 # Install copr or local packages
 copr_target="__COPR_TARGET__"
 rpm_mount="/rpm-packages"
+dnf_cmd=$(command -v dnf5 2>/dev/null || command -v dnf 2>/dev/null || echo "dnf")
 
 if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
     if [[ "$copr_target" != */* ]]; then
@@ -311,22 +312,32 @@ if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
     copr_repo_url="https://copr.fedorainfracloud.org/coprs/${repo_owner}/${repo_name}/repo/fedora-${fedora_ver}/${repo_owner}-${repo_name}-fedora-${fedora_ver}.repo"
     
     mkdir -p /etc/yum.repos.d
+    copr_configured=0
     for attempt in {1..5}; do
-        if curl -fsSL --retry 3 --connect-timeout 10 "$copr_repo_url" -o "/etc/yum.repos.d/_copr:${repo_owner}:${repo_name}.repo" 2>/dev/null; then
-            echo "Successfully configured COPR repository via direct repo download"
-            break
-        elif "$dnf_cmd" -y copr enable "$copr_target" 2>/dev/null || "$dnf_cmd" copr enable -y "$copr_target" 2>/dev/null; then
+        for ver in "${fedora_ver}" "44" "rawhide" "43" "42" "41"; do
+            repo_url="https://copr.fedorainfracloud.org/coprs/${repo_owner}/${repo_name}/repo/fedora-${ver}/${repo_owner}-${repo_name}-fedora-${ver}.repo"
+            if curl -fsSL --retry 2 --connect-timeout 10 "$repo_url" -o "/etc/yum.repos.d/_copr:${repo_owner}:${repo_name}.repo" 2>/dev/null; then
+                if grep -q '\[.*copr.*\]' "/etc/yum.repos.d/_copr:${repo_owner}:${repo_name}.repo" 2>/dev/null; then
+                    echo "Successfully configured COPR repository (fedora-$ver)"
+                    copr_configured=1
+                    break 2
+                else
+                    rm -f "/etc/yum.repos.d/_copr:${repo_owner}:${repo_name}.repo"
+                fi
+            fi
+        done
+        if "$dnf_cmd" -y copr enable "$copr_target" 2>/dev/null || "$dnf_cmd" copr enable -y "$copr_target" 2>/dev/null; then
             echo "Successfully enabled COPR repository via $dnf_cmd"
+            copr_configured=1
             break
-        else
-            echo "COPR enable attempt $attempt failed, retrying in 3s..."
-            sleep 3
         fi
+        echo "COPR enable attempt $attempt failed, retrying in 3s..."
+        sleep 3
     done
     
     if [[ -x "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" ]]; then
         echo "Running bootstrap-fedora-dragon-q8b.sh from repository..."
-        bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --skip-dracut --copr "$copr_target"
+        bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --copr "$copr_target"
     else
         echo "Installing dragon-q8b-support package via $dnf_cmd..."
         "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs --setopt=max_parallel_downloads=1 --setopt=timeout=120 --setopt=retries=10 dragon-q8b-support
@@ -336,10 +347,13 @@ elif [[ -d "$rpm_mount" ]] && compgen -G "$rpm_mount/*.rpm" >/dev/null; then
     dnf -y install "$rpm_mount"/*.rpm || dnf5 -y install "$rpm_mount"/*.rpm
 fi
 
+# Install validation utilities (e.g. dtc for DTB decompile testing)
+"$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dtc 2>/dev/null || true
+
 # Run the validation suite
 if [[ -x "$repo_mount/scripts/validate-e2e.sh" ]]; then
     echo "Executing validate-e2e.sh from repository..."
-    bash "$repo_mount/scripts/validate-e2e.sh" --allow-virtual --skip-dracut-build --output-json /root/e2e-results.json
+    bash "$repo_mount/scripts/validate-e2e.sh" --allow-virtual --output-json /root/e2e-results.json
 else
     echo "Running fallback validate-runtime..."
     if [[ -x "$repo_mount/scripts/validate-runtime.sh" ]]; then
@@ -349,7 +363,7 @@ fi
 EOF
 
 # Substitute placeholders
-sed -i "s|__COPR_TARGET__|${copr_repo:-none}|g" "$guest_script"
+sed "s|__COPR_TARGET__|${copr_repo:-none}|g" "$guest_script" > "$guest_script.tmp" && mv "$guest_script.tmp" "$guest_script"
 chmod +x "$guest_script"
 
 cat > "$cidata_dir/user-data" <<EOF
@@ -365,18 +379,6 @@ chpasswd:
     root:fedora
   expire: false
 write_files:
-  - path: /etc/kernel/install.conf
-    permissions: '0644'
-    owner: root:root
-    content: |
-      initrd_generator=none
-  - path: /etc/dracut.conf.d/00-e2e-fast.conf
-    permissions: '0644'
-    owner: root:root
-    content: |
-      compress="cat"
-      hostonly="yes"
-      dracut_rescue_image="no"
   - path: /root/run-e2e-guest.sh
     permissions: '0755'
     owner: root:root

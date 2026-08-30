@@ -48,7 +48,20 @@ if [ -x %{_libexecdir}/dragon-q8b-thermal ]; then
     %{_libexecdir}/dragon-q8b-thermal --apply-config || :
 fi
 if command -v dracut >/dev/null 2>&1; then
-    dracut --regenerate-all --force || :
+    for kdir in /usr/lib/modules/* /lib/modules/*; do
+        [ -d "$kdir" ] || continue
+        kver="${kdir##*/}"
+        case "$kver" in
+            *dragon*)
+                dracut --kver "$kver" --force || :
+                ;;
+            *)
+                if [ -f "$kdir/dtb/qcom/sc8280xp-radxa-dragon-q8b.dtb" ]; then
+                    dracut --kver "$kver" --force || :
+                fi
+                ;;
+        esac
+    done
 fi
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || :

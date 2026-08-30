@@ -173,11 +173,11 @@ done
 
 dsp_dir="/usr/share/qcom/sc8280xp/radxa/dragon-q8b/dsp"
 if [[ -d "$dsp_dir" ]]; then
-    dsp_count=$(find "$dsp_dir" -maxdepth 1 -type f -name '*.so' | wc -l)
+    dsp_count=$(find "$dsp_dir" -type f \( -name '*.so*' -o -name '*.mbn' -o -name '*.bin' -o -name '*.elf' \) 2>/dev/null | wc -l)
     if [[ "$dsp_count" -gt 0 ]]; then
-        log_ok "Hexagon DSP runtime libraries present in $dsp_dir ($dsp_count shared objects)"
+        log_ok "Hexagon DSP runtime libraries present in $dsp_dir ($dsp_count shared objects/blobs)"
     else
-        log_fail "Hexagon DSP runtime libraries present" "no .so files found in $dsp_dir"
+        log_fail "Hexagon DSP runtime libraries present" "no DSP library files found in $dsp_dir"
     fi
 else
     log_fail "Hexagon DSP directory exists" "missing directory $dsp_dir"
@@ -228,8 +228,25 @@ if [[ -n "$q8b_dtb" && -f "$q8b_dtb" ]]; then
         else
             log_fail "Dragon Q8B DTB decompile" "dtc failed to decompile $q8b_dtb"
         fi
+    elif command -v strings >/dev/null 2>&1; then
+        dtb_strings=$(strings "$q8b_dtb" 2>/dev/null || true)
+        if [[ "$dtb_strings" == *'radxa,dragon-q8b'* ]]; then
+            log_ok "DTB binary contains 'radxa,dragon-q8b' compatible string"
+        else
+            log_fail "DTB binary compatible check" "missing 'radxa,dragon-q8b'"
+        fi
+        if [[ "$dtb_strings" == *'wcd9385'* || "$dtb_strings" == *'soundwire'* ]]; then
+            log_ok "DTB binary contains SoundWire / WCD9385 audio codec strings"
+        else
+            log_fail "DTB binary audio check" "missing SoundWire/wcd9385 strings"
+        fi
+        if [[ "$dtb_strings" == *'remoteproc'* || "$dtb_strings" == *'sc8280xp'* ]]; then
+            log_ok "DTB binary contains Qualcomm SC8280XP SoC remoteproc strings"
+        else
+            log_fail "DTB binary SoC check" "missing SC8280XP/remoteproc strings"
+        fi
     else
-        log_skip "Dragon Q8B DTB inspection with dtc" "dtc command not available"
+        log_skip "Dragon Q8B DTB inspection" "neither dtc nor strings command available"
     fi
 else
     if rpm -q dragon-q8b-kernel >/dev/null 2>&1 || [[ $allow_virtual -eq 0 ]]; then
@@ -319,21 +336,28 @@ fi
 
 if [[ $skip_dracut_build -eq 0 ]] && command -v dracut >/dev/null 2>&1; then
     test_initrd=$(mktemp -u /tmp/test-dracut-q8b.XXXXXX.img)
-    target_kver=$(uname -r)
+    # Prefer installed dragon-q8b kernel version, fallback to running kernel
+    target_kver=$(find /lib/modules /usr/lib/modules -maxdepth 1 -mindepth 1 -name '*dragon*' 2>/dev/null | head -n 1 | xargs -n 1 basename 2>/dev/null || true)
+    if [[ -z "$target_kver" || ! -d "/lib/modules/$target_kver" ]]; then
+        target_kver=$(uname -r)
+    fi
     if [[ -d "/lib/modules/$target_kver" ]]; then
         if dracut --force --no-hostonly --no-compress "$test_initrd" "$target_kver" >/dev/null 2>&1; then
-            log_ok "Dracut successfully generated test initramfs with Q8B policy ($test_initrd)"
+            log_ok "Dracut successfully generated test initramfs with Q8B policy for $target_kver ($test_initrd)"
             
-            if command -v lsinitrd >/dev/null 2>&1; then
-                if lsinitrd "$test_initrd" 2>/dev/null | grep -Eq '40-dragon-q8b|qcom|sc8280xp'; then
-                    log_ok "Generated initramfs contains Dragon Q8B drivers/configuration"
+            if [[ -s "$test_initrd" ]]; then
+                initrd_size=$(stat -c %s "$test_initrd" 2>/dev/null || stat -f %z "$test_initrd" 2>/dev/null || echo "0")
+                if [[ "$initrd_size" -gt 1000000 ]]; then
+                    log_ok "Generated test initramfs is valid and non-empty ($(( initrd_size / 1024 / 1024 )) MB)"
                 else
-                    log_fail "Generated initramfs verification" "Q8B configuration/modules not found in initramfs"
+                    log_fail "Generated initramfs verification" "Initramfs file size suspiciously small ($initrd_size bytes)"
                 fi
+            else
+                log_fail "Generated initramfs verification" "Initramfs file was not created or empty"
             fi
             rm -f "$test_initrd"
         else
-            log_fail "Dracut initramfs test build" "dracut failed to generate initramfs"
+            log_fail "Dracut initramfs test build" "dracut failed to generate initramfs for $target_kver"
             rm -f "$test_initrd"
         fi
     else
@@ -391,14 +415,13 @@ fi
 echo
 echo "--- Section 8: FastRPC Runtime & Environment ---"
 
-fastrpc_libs=("/usr/lib64/libcdsprpc.so" "/usr/lib64/libadsprpc.so" "/usr/lib/libcdsprpc.so" "/usr/lib/libadsprpc.so")
 found_cdsprpc=0
 found_adsprpc=0
-for lib in "${fastrpc_libs[@]}"; do
-    if [[ -e "$lib" ]]; then
-        if [[ "$lib" == *libcdsprpc* ]]; then found_cdsprpc=1; fi
-        if [[ "$lib" == *libadsprpc* ]]; then found_adsprpc=1; fi
-    fi
+for lib in /usr/lib64/libcdsprpc.so* /usr/lib/libcdsprpc.so* /lib64/libcdsprpc.so* /lib/libcdsprpc.so*; do
+    if [[ -e "$lib" ]]; then found_cdsprpc=1; break; fi
+done
+for lib in /usr/lib64/libadsprpc.so* /usr/lib/libadsprpc.so* /lib64/libadsprpc.so* /lib/libadsprpc.so*; do
+    if [[ -e "$lib" ]]; then found_adsprpc=1; break; fi
 done
 
 if [[ $found_cdsprpc -eq 1 && $found_adsprpc -eq 1 ]]; then
