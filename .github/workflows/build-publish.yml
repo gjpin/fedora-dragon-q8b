@@ -49,8 +49,8 @@ jobs:
             fedpkg fedora-packager \
             rpm-build rpmdevtools kernel-rpm-macros python3-devel \
             make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck \
-    autoconf automake libtool libyaml-devel libbsd-devel systemd-rpm-macros \
-    qemu-system-aarch64-core edk2-aarch64 genisoimage qemu-img
+            autoconf automake libtool libyaml-devel libbsd-devel systemd-rpm-macros \
+            qemu-system-aarch64-core edk2-aarch64 genisoimage qemu-img
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
