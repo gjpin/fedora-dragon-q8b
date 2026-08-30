@@ -109,8 +109,8 @@ packages=(
 
 echo "Installing Fedora and Dragon Q8B packages"
 dnf_opts=(
+    --nodocs
     --setopt=install_weak_deps=False
-    --setopt=nodocs=True
     --setopt=max_parallel_downloads=1
     --setopt=timeout=120
     --setopt=retries=10
