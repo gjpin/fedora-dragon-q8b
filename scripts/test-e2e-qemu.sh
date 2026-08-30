@@ -266,6 +266,9 @@ cat > "$guest_script" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# Direct all output to console and guest log
+exec > >(tee -a /dev/console /root/e2e-guest.log) 2>&1
+
 guest_exit() {
     local ec=$?
     set +e
@@ -368,40 +371,6 @@ write_files:
       compress="cat"
       hostonly="yes"
       dracut_rescue_image="no"
-  - path: /etc/systemd/system/dragon-q8b-e2e.service
-    permissions: '0644'
-    owner: root:root
-    content: |
-      [Unit]
-      Description=Dragon Q8B E2E Validation Runner
-      After=network-online.target
-      Wants=network-online.target
-
-      [Service]
-      Type=oneshot
-      ExecStart=/bin/bash /root/run-e2e-guest.sh
-      StandardOutput=journal+console
-      StandardError=journal+console
-
-      [Install]
-      WantedBy=multi-user.target
-  - path: /etc/systemd/system/multi-user.target.wants/dragon-q8b-e2e.service
-    permissions: '0644'
-    owner: root:root
-    content: |
-      [Unit]
-      Description=Dragon Q8B E2E Validation Runner
-      After=network-online.target
-      Wants=network-online.target
-
-      [Service]
-      Type=oneshot
-      ExecStart=/bin/bash /root/run-e2e-guest.sh
-      StandardOutput=journal+console
-      StandardError=journal+console
-
-      [Install]
-      WantedBy=multi-user.target
   - path: /root/run-e2e-guest.sh
     permissions: '0755'
     owner: root:root
@@ -427,6 +396,8 @@ $(sed 's/^/      /' "$repo_root/scripts/validate-runtime.sh")
     owner: root:root
     content: |
 $(sed 's/^/      /' "$repo_root/config/dragon-q8b.env")
+runcmd:
+  - [ bash, /root/run-e2e-guest.sh ]
 EOF
 
 cidata_iso="$work_dir/cidata.iso"
