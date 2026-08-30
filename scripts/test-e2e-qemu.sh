@@ -330,11 +330,11 @@ fi
 # Run the validation suite
 if [[ -x "$repo_mount/scripts/validate-e2e.sh" ]]; then
     echo "Executing validate-e2e.sh from repository..."
-    bash "$repo_mount/scripts/validate-e2e.sh" --allow-virtual --skip-dracut-build --output-json /root/e2e-results.json || true
+    bash "$repo_mount/scripts/validate-e2e.sh" --allow-virtual --skip-dracut-build --output-json /root/e2e-results.json
 else
     echo "Running fallback validate-runtime..."
     if [[ -x "$repo_mount/scripts/validate-runtime.sh" ]]; then
-        bash "$repo_mount/scripts/validate-runtime.sh" || true
+        bash "$repo_mount/scripts/validate-runtime.sh"
     fi
 fi
 EOF
@@ -356,14 +356,26 @@ chpasswd:
     root:fedora
   expire: false
 write_files:
+  - path: /etc/kernel/install.conf
+    permissions: '0644'
+    owner: root:root
+    content: |
+      initrd_generator=none
+  - path: /etc/dracut.conf.d/00-e2e-fast.conf
+    permissions: '0644'
+    owner: root:root
+    content: |
+      compress="cat"
+      hostonly="yes"
+      dracut_rescue_image="no"
   - path: /etc/systemd/system/dragon-q8b-e2e.service
     permissions: '0644'
     owner: root:root
     content: |
       [Unit]
       Description=Dragon Q8B E2E Validation Runner
-      After=network-online.target
-      Wants=network-online.target
+      After=network-online.target cloud-final.service
+      Wants=network-online.target cloud-final.service
 
       [Service]
       Type=oneshot
@@ -379,8 +391,8 @@ write_files:
     content: |
       [Unit]
       Description=Dragon Q8B E2E Validation Runner
-      After=network-online.target
-      Wants=network-online.target
+      After=network-online.target cloud-final.service
+      Wants=network-online.target cloud-final.service
 
       [Service]
       Type=oneshot
@@ -415,8 +427,6 @@ $(sed 's/^/      /' "$repo_root/scripts/validate-runtime.sh")
     owner: root:root
     content: |
 $(sed 's/^/      /' "$repo_root/config/dragon-q8b.env")
-runcmd:
-  - [ bash, /root/run-e2e-guest.sh ]
 EOF
 
 cidata_iso="$work_dir/cidata.iso"
