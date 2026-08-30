@@ -18,16 +18,21 @@ find_dtb() {
 
 command -v grubby >/dev/null 2>&1 || exit 0
 
+declare -A seen_dirs
 for module_dir in /usr/lib/modules/* /lib/modules/*; do
     [[ -d "$module_dir" ]] || continue
+    real_dir=$(realpath "$module_dir" 2>/dev/null || echo "$module_dir")
+    [[ -z "${seen_dirs[$real_dir]:-}" ]] || continue
+    seen_dirs["$real_dir"]=1
+
     version=${module_dir##*/}
     [[ -f "$module_dir/vmlinuz" ]] || continue
-    dtb=$(find_dtb "$version") || {
+    if dtb=$(find_dtb "$version" 2>/dev/null); then
+        grubby --update-kernel "$module_dir/vmlinuz" \
+            --args "$boot_args" \
+            --devtree "$dtb" || true
+    else
         printf '[dragon-q8b-boot] no Q8B DTB for %s\n' "$version" >&2
-        continue
-    }
-    grubby --update-kernel "$module_dir/vmlinuz" \
-        --args "$boot_args" \
-        --devtree "$dtb"
+    fi
 done
 

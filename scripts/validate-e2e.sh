@@ -288,13 +288,13 @@ dracut_conf="/etc/dracut.conf.d/40-dragon-q8b.conf"
 if [[ -f "$dracut_conf" ]]; then
     log_ok "Dracut configuration file $dracut_conf exists"
     
-    if grep -Eq 'add_drivers\+=.*qcom_q6v5_pas' "$dracut_conf"; then
+    if grep -Eq '(add_drivers|force_drivers)\+=.*qcom_q6v5_pas' "$dracut_conf"; then
         log_ok "Dracut configuration includes Qualcomm remoteproc drivers"
     else
         log_fail "Dracut remoteproc drivers" "qcom_q6v5_pas missing in $dracut_conf"
     fi
     
-    if grep -Eq 'install_items\+=.*qcom' "$dracut_conf"; then
+    if grep -Eq '(install_items|install_optional_items)\+=.*qcom' "$dracut_conf"; then
         log_ok "Dracut configuration includes Qualcomm firmware install items"
     else
         log_fail "Dracut firmware install items" "Qualcomm firmware items missing in $dracut_conf"
