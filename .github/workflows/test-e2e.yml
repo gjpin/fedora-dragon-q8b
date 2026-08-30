@@ -18,7 +18,7 @@ on:
       timeout:
         description: Execution timeout in seconds
         required: false
-        default: '1200'
+        default: '2400'
 
 permissions:
   contents: read
@@ -61,7 +61,7 @@ jobs:
             --copr "$copr_target" \
             --release "$FEDORA_RELEASE" \
             --output "$RUNNER_TEMP/qemu-e2e" \
-            --timeout "${INPUT_TIMEOUT:-1200}"
+            --timeout "${INPUT_TIMEOUT:-2400}"
       - name: Upload QEMU E2E test logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

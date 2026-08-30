@@ -87,8 +87,8 @@ dnf_cmd=$(command -v dnf5 || command -v dnf || true)
 
 echo "Installing COPR integration for $copr_owner/$copr_project"
 if ! "$dnf_cmd" copr --help >/dev/null 2>&1; then
-    "$dnf_cmd" -y install dnf-plugins-core >/dev/null 2>&1 || \
-        "$dnf_cmd" -y install dnf5-plugins
+    "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf-plugins-core >/dev/null 2>&1 || \
+        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf5-plugins
 fi
 "$dnf_cmd" -y copr enable "$copr_owner/$copr_project"
 
@@ -102,7 +102,7 @@ packages=(
 )
 
 echo "Installing Fedora and Dragon Q8B packages"
-"$dnf_cmd" -y install "${packages[@]}"
+"$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs "${packages[@]}"
 
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || :
