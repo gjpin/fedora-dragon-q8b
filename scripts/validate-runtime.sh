@@ -27,11 +27,14 @@ check_dtb() {
 }
 
 check 'device tree identifies Radxa Dragon Q8B' check_q8b_compatible
-for package in qrtr tqftpserv bluez alsa-ucm qcom-firmware dragon-q8b-support \
+for package in qrtr tqftpserv bluez alsa-ucm qcom-firmware pd-mapper dragon-q8b-support \
     dragon-q8b-kernel dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays \
-    dragon-q8b-alsa-ucm dragon-q8b-fastrpc dragon-q8b-qnn; do
+    dragon-q8b-alsa-ucm fastrpc dragon-q8b-fastrpc; do
     check "RPM $package is installed" check_package "$package"
 done
+if command -v rpm >/dev/null 2>&1 && rpm -q dragon-q8b-qnn >/dev/null 2>&1; then
+    check "RPM dragon-q8b-qnn is installed" check_package dragon-q8b-qnn
+fi
 
 if command -v rpm >/dev/null 2>&1; then
     while IFS= read -r version; do

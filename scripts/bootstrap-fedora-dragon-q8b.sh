@@ -87,26 +87,12 @@ dnf_cmd=$(command -v dnf5 || command -v dnf || true)
 
 echo "Installing COPR integration for $copr_owner/$copr_project"
 mkdir -p /etc/yum.repos.d
-copr_configured=0
-for ver in "${fedora_release:-44}" "44" "rawhide" "43" "42" "41"; do
-    copr_repo_url="https://copr.fedorainfracloud.org/coprs/${copr_owner}/${copr_project}/repo/fedora-${ver}/${copr_owner}-${copr_project}-fedora-${ver}.repo"
-    if curl -fsSL --retry 3 --connect-timeout 10 "$copr_repo_url" -o "/etc/yum.repos.d/_copr:${copr_owner}:${copr_project}.repo" 2>/dev/null; then
-        if grep -q '\[.*copr.*\]' "/etc/yum.repos.d/_copr:${copr_owner}:${copr_project}.repo" 2>/dev/null; then
-            echo "Configured COPR repository via direct repo configuration (fedora-$ver)"
-            copr_configured=1
-            break
-        else
-            rm -f "/etc/yum.repos.d/_copr:${copr_owner}:${copr_project}.repo"
-        fi
-    fi
-done
-if [[ $copr_configured -eq 0 ]]; then
-    if ! "$dnf_cmd" copr --help >/dev/null 2>&1; then
-        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf-plugins-core >/dev/null 2>&1 || \
-            "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf5-plugins || true
-    fi
-    "$dnf_cmd" -y copr enable "$copr_owner/$copr_project" || true
+if ! "$dnf_cmd" copr --help >/dev/null 2>&1; then
+    "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf-plugins-core >/dev/null 2>&1 || \
+        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf5-plugins || true
 fi
+"$dnf_cmd" -y copr enable "$copr_owner/$copr_project" || \
+    die "could not enable COPR $copr_owner/$copr_project for this Fedora release"
 
 packages=(
     qrtr
@@ -141,8 +127,14 @@ done
 
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || :
+    if systemctl list-unit-files pd-mapper.service >/dev/null 2>&1; then
+        systemctl enable pd-mapper.service || warn "could not enable pd-mapper.service"
+    fi
     if systemctl list-unit-files dragon-q8b-bt.service >/dev/null 2>&1; then
         systemctl enable dragon-q8b-bt.service || warn "could not enable dragon-q8b-bt.service"
+    fi
+    if systemctl list-unit-files dragon-q8b-thermal.service >/dev/null 2>&1; then
+        systemctl enable dragon-q8b-thermal.service || warn "could not enable dragon-q8b-thermal.service"
     fi
     if systemctl list-unit-files bluetooth.service >/dev/null 2>&1; then
         systemctl enable bluetooth.service || warn "could not enable bluetooth.service"

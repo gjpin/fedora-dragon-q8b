@@ -1,0 +1,17 @@
+# Dragon Q8B / SC8280XP fragment for Fedora's kernel-local.
+# Only symbols that Fedora aarch64 does not already set. Fedora's config
+# merger fails the build if a symbol is unknown in this release.
+
+# Device-tree overlay support for fdtoverlay-merged Q8B DTBs.
+CONFIG_OF_OVERLAY=y
+
+# TC956x / QPS615 (Armbian queue). Not in stock Fedora aarch64.
+CONFIG_GPIO_TC956X=m
+CONFIG_TOSHIBA_TC956X_PCI=m
+CONFIG_DWMAC_TC956X=m
+
+# Iris video codec used by the Q8B DTS.
+CONFIG_VIDEO_QCOM_IRIS=m
+
+# Optional Heatsink 6845B PWM fan overlay.
+CONFIG_PWM_FAN=m

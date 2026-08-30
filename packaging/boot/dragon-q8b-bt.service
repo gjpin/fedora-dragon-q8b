@@ -9,4 +9,4 @@ ExecStart=/usr/libexec/dragon-q8b-bt-address
 RemainAfterExit=yes
 
 [Install]
-WantedBy=bluetooth.target multi-user.target
+WantedBy=bluetooth.service

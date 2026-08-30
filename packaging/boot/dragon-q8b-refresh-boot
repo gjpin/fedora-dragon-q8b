@@ -1,12 +1,32 @@
 #!/usr/bin/env bash
+# Merge enabled Dragon Q8B overlays into the board DTB and point BLS/grubby at
+# the result. Invoked from kernel-install plugins and dragon-q8b-overlay.
 set -Eeuo pipefail
 
 dtb_relpath=qcom/sc8280xp-radxa-dragon-q8b.dtb
-boot_args='clk_ignore_unused pd_ignore_unused arm64.nopauth efi=noruntime'
+overlay_dir=/usr/share/dragon-q8b/overlays
+overlay_conf=/etc/dragon-q8b/overlays.conf
+only_version=
 
-find_dtb() {
-    local version=$1
-    local candidate
+usage() {
+    cat <<'EOF'
+Usage: dragon-q8b-refresh-boot [--kernel-version VERSION]
+
+Merge overlays from /etc/dragon-q8b/overlays.conf into the Q8B DTB with
+fdtoverlay and set the BLS devicetree key (grubby --devtree as fallback).
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --kernel-version) only_version=${2:?missing kernel version}; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+find_base_dtb() {
+    local version=$1 candidate
     for candidate in \
         "/usr/lib/modules/$version/dtb/$dtb_relpath" \
         "/lib/modules/$version/dtb/$dtb_relpath" \
@@ -16,23 +36,87 @@ find_dtb() {
     return 1
 }
 
-command -v grubby >/dev/null 2>&1 || exit 0
+read_overlays() {
+    [[ -r "$overlay_conf" ]] || return 0
+    awk 'NF && $1 !~ /^#/ {print $1}' "$overlay_conf"
+}
+
+merge_dtb() {
+    local base=$1 dest=$2
+    local -a args=() overlay
+    mkdir -p "$(dirname "$dest")"
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        overlay="$overlay_dir/${name}.dtbo"
+        if [[ ! -f "$overlay" ]]; then
+            printf '[dragon-q8b-boot] skipping missing overlay %s\n' "$overlay" >&2
+            continue
+        fi
+        args+=("$overlay")
+    done < <(read_overlays)
+    if [[ ${#args[@]} -eq 0 ]]; then
+        cp -a "$base" "$dest"
+        return 0
+    fi
+    command -v fdtoverlay >/dev/null 2>&1 || {
+        printf '[dragon-q8b-boot] fdtoverlay not found; copying base DTB\n' >&2
+        cp -a "$base" "$dest"
+        return 0
+    }
+    if ! fdtoverlay -i "$base" -o "$dest" "${args[@]}"; then
+        printf '[dragon-q8b-boot] fdtoverlay failed; copying base DTB\n' >&2
+        cp -a "$base" "$dest"
+    fi
+}
+
+set_bls_devicetree() {
+    local version=$1 dtb=$2
+    local relpath entry
+    relpath="dtb-$version/$dtb_relpath"
+    shopt -s nullglob
+    for entry in \
+        /boot/loader/entries/*"${version}"*.conf \
+        /boot/efi/loader/entries/*"${version}"*.conf \
+        /loader/entries/*"${version}"*.conf; do
+        [[ -f "$entry" ]] || continue
+        if grep -q '^devicetree ' "$entry"; then
+            sed -i "s#^devicetree .*#devicetree /${relpath}#" "$entry"
+        else
+            printf 'devicetree /%s\n' "$relpath" >> "$entry"
+        fi
+    done
+    shopt -u nullglob
+}
+
+set_grubby_devicetree() {
+    local version=$1 dtb=$2
+    command -v grubby >/dev/null 2>&1 || return 0
+    local image
+    for image in "/usr/lib/modules/$version/vmlinuz" "/lib/modules/$version/vmlinuz" "/boot/vmlinuz-$version"; do
+        if [[ -f "$image" ]]; then
+            grubby --update-kernel "$image" --devtree "$dtb" || true
+            return 0
+        fi
+    done
+}
 
 declare -A seen_dirs
 for module_dir in /usr/lib/modules/* /lib/modules/*; do
     [[ -d "$module_dir" ]] || continue
+    version=${module_dir##*/}
+    if [[ -n "$only_version" && "$version" != "$only_version" ]]; then
+        continue
+    fi
     real_dir=$(realpath "$module_dir" 2>/dev/null || echo "$module_dir")
     [[ -z "${seen_dirs[$real_dir]:-}" ]] || continue
     seen_dirs["$real_dir"]=1
-
-    version=${module_dir##*/}
     [[ -f "$module_dir/vmlinuz" ]] || continue
-    if dtb=$(find_dtb "$version" 2>/dev/null); then
-        grubby --update-kernel "$module_dir/vmlinuz" \
-            --args "$boot_args" \
-            --devtree "$dtb" || true
-    else
+    base_dtb=$(find_base_dtb "$version" 2>/dev/null) || {
         printf '[dragon-q8b-boot] no Q8B DTB for %s\n' "$version" >&2
-    fi
+        continue
+    }
+    dest="/boot/dtb-$version/$dtb_relpath"
+    merge_dtb "$base_dtb" "$dest"
+    set_bls_devicetree "$version" "$dest"
+    set_grubby_devicetree "$version" "$dest"
 done
-

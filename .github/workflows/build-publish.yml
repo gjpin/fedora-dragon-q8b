@@ -22,6 +22,11 @@ on:
         description: Packages to build (auto, all, none, or comma/space-separated list)
         required: false
         default: auto
+      promote_to_production:
+        description: After staging E2E, submit the same SRPMs to production COPR (dragon-q8b)
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -44,8 +49,8 @@ jobs:
             fedpkg fedora-packager \
             rpm-build rpmdevtools kernel-rpm-macros python3-devel \
             make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck \
-            autoconf automake libtool libyaml-devel libbsd-devel \
-            qemu-system-aarch64-core edk2-aarch64 genisoimage qemu-img
+    autoconf automake libtool libyaml-devel libbsd-devel systemd-rpm-macros \
+    qemu-system-aarch64-core edk2-aarch64 genisoimage qemu-img
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: false
@@ -64,7 +69,11 @@ jobs:
             packaging/boot/dragon-q8b-bt-address \
             packaging/boot/dragon-q8b-refresh-boot \
             packaging/boot/dragon-q8b-thermal \
-            packaging/qnn/dragon-q8b-qnn-sync
+            packaging/boot/50-dragon-q8b.install \
+            packaging/boot/91-dragon-q8b.install \
+            packaging/overlays/dragon-q8b-overlay \
+            packaging/qnn/dragon-q8b-qnn-sync \
+            packaging/qnn/dragon-q8b-qnn.sh
           for spec in packaging/*/*.spec; do
             rpmspec --parse "$spec" >/dev/null
           done
@@ -75,6 +84,9 @@ jobs:
           bash scripts/test-e2e-qemu.sh --help
           test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq \
             "$(wc -l < config/armbian-sc8280xp-edge-patches.sha256)"
+      - name: Fetch pull-request base
+        if: github.base_ref != ''
+        run: git fetch origin "${{ github.base_ref }}" --no-tags
       - name: Detect affected packages
         id: detect_packages
         env:
@@ -189,13 +201,16 @@ jobs:
           name: qemu-e2e-logs-${{ github.run_id }}
           path: ${{ runner.temp }}/qemu-e2e
           if-no-files-found: ignore
-      - name: Publish to production COPR project upon successful E2E validation
-        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
+      - name: Publish to production COPR (manual promote only)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.promote_to_production == 'true' &&
+          steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_OWNER: ${{ secrets.COPR_OWNER }}
         run: |
           prod_project="dragon-q8b"
-          echo "Promoting verified packages to production COPR project: $COPR_OWNER/$prod_project"
+          echo "Promoting packages to production COPR project: $COPR_OWNER/$prod_project"
           bash scripts/submit-copr-builds.sh \
             --project "$COPR_OWNER/$prod_project" \
             --chroot "fedora-${FEDORA_RELEASE}-aarch64" \

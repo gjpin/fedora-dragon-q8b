@@ -51,7 +51,16 @@ Configure these repository secrets before scheduled publishing:
 - `COPR_OWNER`: COPR user or group that owns the projects.
 - `COPR_CONFIG`: the complete `~/.config/copr` file contents for `copr-cli`.
 
-Automatic builds submit packages to `dragon-q8b-staging`. After the staging COPR build completes, GitHub Actions spins up a Fedora `aarch64` QEMU virtual machine to run end-to-end validation (`scripts/test-e2e-qemu.sh` and `scripts/validate-e2e.sh`). Once all QEMU E2E validation checks pass, the workflow automatically publishes the verified build to the production `dragon-q8b` COPR repository.
+Automatic builds submit packages to `dragon-q8b-staging` only. QEMU E2E is a
+staging gate, not a substitute for hardware. Production COPR (`dragon-q8b`) is
+promoted manually: **Actions → Build and publish Fedora Dragon Q8B packages →
+Run workflow** with **promote_to_production** enabled.
+
+There is no modem/`rmtfs` stack. Wi-Fi and Bluetooth use the M.2 E-key slot.
+The PWM fan is optional (official Heatsink 6845B): enable it with
+`dragon-q8b-overlay enable pwm-fan` and reboot. The default thermal governor is
+`power_allocator`; `step_wise` is applied only when a `pwm-fan` cooling device
+exists. The default kernel command line is `clk_ignore_unused` only.
 
 ## QEMU End-to-End Testing
 
@@ -79,10 +88,10 @@ The runner automatically selects native hardware acceleration (`-accel hvf` on m
 - **Device Tree Overlays**: Validates syntax and fragments for all expansion and PCIe overlays.
 - **Boot & Dracut Initramfs Policy**: Validates Qualcomm drivers and firmware inclusion in dracut initramfs and tests `/usr/libexec/dragon-q8b-refresh-boot`.
 - **Bluetooth Service**: Validates deterministic locally-administered MAC generation and systemd service.
-- **FastRPC Runtime**: Validates `libcdsprpc.so`, `libadsprpc.so`, `dsp_check`, udev rules, and environment variables.
-- **QNN / QAIRT Integration**: Validates the pinned official Qualcomm download metadata, installer CLI, license disclosure, and ld.so/profile configuration. Hardware validation runs after the SDK is explicitly installed on a physical Q8B.
-- **ALSA UCM Profiles**: Validates Qualcomm SC8280XP and Dragon Q8B UCM2 configurations.
-- **Thermal & Fan Cooling**: Validates `dragon-q8b-thermal` utility, interactive menu, `step_wise` PWM fan default, and `/etc/dragon-q8b/thermal.conf` persistence.
+- **FastRPC Runtime**: Validates `libcdsprpc.so`, `libadsprpc.so`, upstream `60-fastrpc.rules` (0640 + group `fastrpc`), and DSP search-path environment variables. `dsp_check` is optional (not in FastRPC 1.0.6).
+- **QNN / QAIRT Integration**: Optional `dragon-q8b-qnn` Recommends. When installed, validates the checksum-pinned Qualcomm Software Center Community Edition metadata, installer CLI, license disclosure, and ld.so/profile configuration. The first install requires `--accept-license`. Later `dnf update` refreshes the SDK silently when the bundled license PDF is unchanged. Hardware validation runs after the SDK is installed on a physical Q8B.
+- **ALSA UCM Profiles**: Validates Dragon Q8B UCM2 profiles and the conf.d DMI match. Fedora's SoC `sc8280xp.conf` is not replaced.
+- **Thermal & Fan Cooling**: Validates `dragon-q8b-thermal`, default `power_allocator`, packaged tmpfiles, and overlay-gated `step_wise` when a `pwm-fan` cooling device exists.
 
 ## Local Fedora build
 
@@ -137,8 +146,10 @@ prove physical Q8B peripheral support.
 
 The support bundle includes the `dragon-q8b-qnn` Fedora integration package.
 Qualcomm's license prohibits standalone redistribution of the QAIRT SDK, so the
-RPM does not contain the proprietary archive. Install the Radxa-validated,
-checksum-pinned release directly from Qualcomm after reviewing the license:
+RPM does not contain the proprietary archive. Review the license once, then
+install the checksum-pinned Community Edition from Qualcomm Software Center.
+Later package updates follow the catalog and refresh the SDK when the license
+PDF is unchanged. Radxa's docs and Yocto recipes may lag the catalog.
 
 ```shell
 dragon-q8b-qnn license

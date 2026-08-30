@@ -140,7 +140,12 @@ COPR_CONFIG = complete contents of ~/.config/copr
 
 You can trigger a build manually via **Actions → Build and publish Fedora Dragon Q8B packages → Run workflow**, or simply push to `main`.
 
-The workflow builds in a Fedora 44 container and submits packages to `dragon-q8b-staging`. It then executes the automated Fedora QEMU aarch64 E2E validation test (`scripts/test-e2e-qemu.sh`), and on test success automatically publishes the verified build to the production `dragon-q8b` project.
+The workflow builds in a Fedora 44 container and submits packages to
+`dragon-q8b-staging`. It then runs the Fedora QEMU aarch64 E2E validation
+(`scripts/test-e2e-qemu.sh`). QEMU is a staging gate, not a hardware
+substitute. Production `dragon-q8b` is not published automatically; promote it
+with **Actions → Build and publish Fedora Dragon Q8B packages → Run workflow**
+and enable **promote_to_production**.
 
 You can also run the QEMU E2E test locally:
 
@@ -158,7 +163,10 @@ sudo dnf install dragon-q8b-support
 ```
 
 Install the proprietary Qualcomm QAIRT/QNN SDK directly from Qualcomm after
-reviewing and accepting its bundled license, then validate SC8280XP HTP v68:
+reviewing and accepting its bundled license, then validate SC8280XP HTP v68.
+The helper tracks Qualcomm Software Center Community Edition; after this first
+accept, `dnf update dragon-q8b-qnn` refreshes the SDK when the license PDF is
+unchanged. Radxa's Q8B page may still document an older pin.
 
 ```shell
 dragon-q8b-qnn license
@@ -188,6 +196,10 @@ sudo COPR_OWNER=<your-user> \
 Do not use `--force` on a real board unless you understand which hardware or
 release checks it bypasses. The script does not flash SPI/UEFI firmware,
 remove old kernels, upgrade the whole system, or reboot automatically.
+
+There is no modem/`rmtfs` stack (Wi-Fi/BT is M.2 E-key only). The PWM fan is
+optional: `sudo dragon-q8b-overlay enable pwm-fan` then reboot. Default cooling
+is `power_allocator`; the default kernel command line is `clk_ignore_unused`.
 
 ## 5. Validate the hardware
 

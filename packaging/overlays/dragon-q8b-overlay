@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+overlay_dir=/usr/share/dragon-q8b/overlays
+conf=/etc/dragon-q8b/overlays.conf
+
+usage() {
+    cat <<'EOF'
+Usage: dragon-q8b-overlay enable|disable|list [NAME...]
+
+Enable or disable Dragon Q8B device-tree overlays and re-run kernel-install
+so fdtoverlay can merge them into the Q8B DTB.
+
+Names may be overlay basenames (without .dtbo) or short aliases such as
+pwm-fan for sc8280xp-radxa-dragon-q8b-pwm-fan.
+
+Heatsink 6845B: dragon-q8b-overlay enable pwm-fan then reboot.
+EOF
+}
+
+log() { printf '[dragon-q8b-overlay] %s\n' "$*"; }
+die() { printf '[dragon-q8b-overlay] %s\n' "$*" >&2; exit 1; }
+
+command=${1:-}
+shift || true
+case "$command" in
+    enable|disable|list) ;;
+    -h|--help|help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+esac
+
+mkdir -p "$(dirname "$conf")"
+[[ -f "$conf" ]] || : > "$conf"
+
+list_available() {
+    local f
+    shopt -s nullglob
+    for f in "$overlay_dir"/*.dtbo; do
+        basename "${f%.dtbo}"
+    done | LC_ALL=C sort
+    shopt -u nullglob
+}
+
+read_enabled() {
+    awk 'NF && $1 !~ /^#/ {print $1}' "$conf"
+}
+
+write_enabled() {
+    local tmp
+    tmp=$(mktemp)
+    {
+        printf '%s\n' '# Enabled Dragon Q8B device-tree overlays (basenames without .dtbo).'
+        printf '%s\n' '# Managed by dragon-q8b-overlay. Heatsink 6845B: enable pwm-fan then reboot.'
+        printf '%s\n' "$@"
+    } > "$tmp"
+    chmod 0644 "$tmp"
+    mv "$tmp" "$conf"
+}
+
+resolve_name() {
+    local want=$1 name
+    want=${want%.dtbo}
+    if [[ -f "$overlay_dir/${want}.dtbo" ]]; then
+        printf '%s\n' "$want"
+        return 0
+    fi
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        case "$name" in
+            *-"$want"|"$want") printf '%s\n' "$name"; return 0 ;;
+        esac
+    done < <(list_available)
+    return 1
+}
+
+refresh_kernels() {
+    if [[ -x /usr/libexec/dragon-q8b-refresh-boot ]]; then
+        /usr/libexec/dragon-q8b-refresh-boot || die "kernel-install refresh failed"
+        return 0
+    fi
+    die "dragon-q8b-refresh-boot is not installed"
+}
+
+case "$command" in
+    list)
+        echo "Available overlays in $overlay_dir:"
+        list_available | sed 's/^/  /'
+        echo
+        echo "Enabled in $conf:"
+        enabled=$(read_enabled)
+        if [[ -z "$enabled" ]]; then
+            echo "  (none)"
+        else
+            while IFS= read -r name; do
+                [[ -n "$name" ]] && printf '  %s\n' "$name"
+            done <<< "$enabled"
+        fi
+        ;;
+    enable|disable)
+        [[ $# -gt 0 ]] || die "specify one or more overlay names"
+        declare -A selected=()
+        while IFS= read -r name; do
+            [[ -n "$name" ]] && selected["$name"]=1
+        done < <(read_enabled)
+        for raw in "$@"; do
+            resolved=$(resolve_name "$raw") || die "unknown overlay: $raw"
+            if [[ "$command" == enable ]]; then
+                selected["$resolved"]=1
+                log "enabled $resolved"
+            else
+                unset "selected[$resolved]"
+                log "disabled $resolved"
+            fi
+        done
+        names=()
+        while IFS= read -r name; do
+            [[ -n "${selected[$name]:-}" ]] && names+=("$name")
+        done < <(list_available)
+        write_enabled "${names[@]}"
+        refresh_kernels
+        log "updated $conf; reboot to load the merged DTB"
+        ;;
+esac

@@ -14,6 +14,13 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck disable=SC1091
 source "$repo_root/config/dragon-q8b.env"
 : "${ALSA_UCM_API:?missing ALSA_UCM_API in config/dragon-q8b.env}"
+: "${FASTRPC_TAG:?missing FASTRPC_TAG in config/dragon-q8b.env}"
+: "${QAIRT_VERSION:?missing QAIRT_VERSION in config/dragon-q8b.env}"
+: "${QAIRT_DOWNLOAD_URL:?missing QAIRT_DOWNLOAD_URL in config/dragon-q8b.env}"
+: "${QAIRT_ARCHIVE_SHA256:?missing QAIRT_ARCHIVE_SHA256 in config/dragon-q8b.env}"
+: "${QAIRT_LICENSE_SHA256:?missing QAIRT_LICENSE_SHA256 in config/dragon-q8b.env}"
+: "${QAIRT_TARGET:?missing QAIRT_TARGET in config/dragon-q8b.env}"
+: "${QAIRT_DSP_ARCH:?missing QAIRT_DSP_ARCH in config/dragon-q8b.env}"
 
 output=
 while [[ $# -gt 0 ]]; do
@@ -24,12 +31,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-for command in ar awk cp curl find git grep jq mktemp rm sha256sum sort tar; do
+for command in awk cp curl find git grep jq mktemp rm rsync sha256sum sort tar unzip; do
     command -v "$command" >/dev/null || {
         echo "missing required command: $command" >&2
         exit 1
     }
 done
+# shellcheck disable=SC1091
+source "$repo_root/scripts/qairt-catalog.sh"
 
 work_dir=$(mktemp -d -t dragon-q8b-vendor.XXXXXX)
 stage="$work_dir/stage"
@@ -44,18 +53,6 @@ archive_has_license() {
         tolower($NF) ~ /^(license|copying)(\..*)?$/ {found=1}
         END {exit !found}
     '
-}
-
-list_deb_data() {
-    local deb=$1 member=$2
-    case "$member" in
-        data.tar.xz) ar p "$deb" "$member" | tar -tJf - ;;
-        data.tar.gz) ar p "$deb" "$member" | tar -tzf - ;;
-        data.tar.bz2) ar p "$deb" "$member" | tar -tjf - ;;
-        data.tar.zst) ar p "$deb" "$member" | tar --zstd -tf - ;;
-        data.tar.lzma) ar p "$deb" "$member" | tar --lzma -tf - ;;
-        *) ar p "$deb" "$member" | tar -tf - ;;
-    esac
 }
 
 resolve_ref() {
@@ -81,11 +78,41 @@ replace_config() {
     mv "$temp" "$file"
 }
 
+ensure_qcom_no_battery() {
+    local dts=$1
+    grep -Fq 'qcom,no-battery' "$dts" && return 0
+    awk '
+        /compatible = "radxa,batteryless-pmic-glink"/ && !done {
+            print
+            print "\t\tqcom,no-battery;"
+            done=1
+            next
+        }
+        {print}
+    ' "$dts" > "$dts.tmp"
+    mv "$dts.tmp" "$dts"
+    grep -Fq 'qcom,no-battery' "$dts" || {
+        echo "failed to insert qcom,no-battery into $dts" >&2
+        exit 1
+    }
+}
+
+github_json() {
+    local url=$1 dest=$2
+    local -a curl_args=(--fail --silent --show-error --location --retry 4 --retry-all-errors)
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+        curl_args+=(-H "Authorization: Bearer $GITHUB_TOKEN")
+    fi
+    curl "${curl_args[@]}" -H "Accept: application/vnd.github+json" \
+        "$url" --output "$dest"
+}
+
 radxa_kernel_ref=$(resolve_ref "$RADXA_KERNEL_REPO" "refs/heads/$RADXA_KERNEL_BRANCH")
 radxa_firmware_ref=$(resolve_ref "$RADXA_FIRMWARE_REPO" refs/heads/main)
 radxa_overlays_ref=$(resolve_ref "$RADXA_OVERLAYS_REPO" refs/heads/main)
 armbian_ref=$(resolve_ref "$ARMBIAN_BUILD_REPO" refs/heads/main)
-fastrpc_ref=$(resolve_ref "$FASTRPC_REPO" refs/heads/main)
+fastrpc_ref=$(resolve_ref "$FASTRPC_REPO" "refs/tags/${FASTRPC_TAG}")
+[[ -n "$fastrpc_ref" ]] || fastrpc_ref=$(resolve_ref "$FASTRPC_REPO" "refs/tags/${FASTRPC_TAG}^{}")
 for value_name in radxa_kernel_ref radxa_firmware_ref radxa_overlays_ref armbian_ref fastrpc_ref; do
     [[ -n "${!value_name}" ]] || {
         echo "could not resolve $value_name" >&2
@@ -97,12 +124,14 @@ radxa_dts="$stage/vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts"
 download \
     "https://raw.githubusercontent.com/radxa/kernel/${radxa_kernel_ref}/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts" \
     "$radxa_dts"
+ensure_qcom_no_battery "$radxa_dts"
 for marker in \
     'compatible = "radxa,dragon-q8b", "qcom,sc8280xp"' \
     'qcom/sc8280xp/radxa/dragon-q8b/qcadsp8280.mbn' \
     'qcom/vpu/vpu20_p4_gen2_s6.mbn' \
     'QPS615' \
-    'qcom,wcd9385-codec'; do
+    'qcom,wcd9385-codec' \
+    'qcom,no-battery'; do
     grep -Fq "$marker" "$radxa_dts" || {
         echo "Radxa Q8B DTS is missing expected marker: $marker" >&2
         exit 1
@@ -127,14 +156,38 @@ archive_has_license "$overlays_archive" || {
     exit 1
 }
 
-fastrpc_archive="$stage/vendor/qualcomm/fastrpc/fastrpc-${fastrpc_ref}.tar.gz"
-download "${FASTRPC_REPO%.git}/archive/${fastrpc_ref}.tar.gz" \
+fastrpc_version=${FASTRPC_TAG#v}
+fastrpc_archive="$stage/vendor/qualcomm/fastrpc/fastrpc-${fastrpc_version}.tar.gz"
+download "${FASTRPC_REPO%.git}/archive/refs/tags/${FASTRPC_TAG}.tar.gz" \
     "$fastrpc_archive"
 tar -tzf "$fastrpc_archive" >/dev/null
 archive_has_license "$fastrpc_archive" || {
     echo "Qualcomm FastRPC archive has no license file" >&2
     exit 1
 }
+
+# Compare Armbian's sc8280xp-edge directory to the pinned list. Extra patches
+# (0036+) must not be ignored; the Armbian Q8B DTS patch is a known exclusion.
+armbian_dir_json="$work_dir/armbian-dir.json"
+github_json \
+    "https://api.github.com/repos/armbian/build/contents/${ARMBIAN_PATCH_DIR}?ref=${armbian_ref}" \
+    "$armbian_dir_json"
+armbian_dts_patch=0005-arm64-dts-sc8280xp-add-radxa-dragon-q8b.patch
+mapfile -t upstream_patches < <(jq -r --arg skip "$armbian_dts_patch" '
+    .[] | select(.type == "file" and (.name | endswith(".patch")) and .name != $skip) | .name
+' "$armbian_dir_json" | LC_ALL=C sort)
+mapfile -t listed_patches < <(awk 'NF && $1 !~ /^#/ {print}' \
+    "$repo_root/config/armbian-sc8280xp-edge-patches.list" | LC_ALL=C sort)
+upstream_joined=$(printf '%s\n' "${upstream_patches[@]}")
+listed_joined=$(printf '%s\n' "${listed_patches[@]}")
+extra=$(comm -13 <(printf '%s\n' "$listed_joined") <(printf '%s\n' "$upstream_joined") || true)
+missing=$(comm -23 <(printf '%s\n' "$listed_joined") <(printf '%s\n' "$upstream_joined") || true)
+if [[ -n "$extra" || -n "$missing" ]]; then
+    echo "Armbian ${ARMBIAN_PATCH_DIR} at ${armbian_ref} does not match config/armbian-sc8280xp-edge-patches.list" >&2
+    [[ -n "$extra" ]] && printf 'added in Armbian (update the list or drop):\n%s\n' "$extra" >&2
+    [[ -n "$missing" ]] && printf 'listed but removed upstream:\n%s\n' "$missing" >&2
+    exit 1
+fi
 
 patch_dir="$stage/vendor/armbian/sc8280xp-edge-patches"
 mkdir -p "$patch_dir"
@@ -144,7 +197,7 @@ mkdir -p "$(dirname "$patch_manifest")"
 patch_base_url="https://raw.githubusercontent.com/armbian/build/${armbian_ref}/${ARMBIAN_PATCH_DIR}"
 while IFS= read -r patch_name; do
     [[ -z "$patch_name" || "$patch_name" == \#* ]] && continue
-    [[ "$patch_name" != 0005-arm64-dts-sc8280xp-add-radxa-dragon-q8b.patch ]] || {
+    [[ "$patch_name" != "$armbian_dts_patch" ]] || {
         echo "refusing to download the Armbian Q8B DTS patch; Radxa is authoritative" >&2
         exit 1
     }
@@ -155,29 +208,23 @@ while IFS= read -r patch_name; do
 done < "$repo_root/config/armbian-sc8280xp-edge-patches.list"
 
 alsa_release_json="$work_dir/alsa-release.json"
-download "${ALSA_UCM_API}/releases/latest" \
-    "$alsa_release_json"
+download "${ALSA_UCM_API}/releases/latest" "$alsa_release_json"
 alsa_version=$(jq -er '.tag_name | select(type == "string" and length > 0)' "$alsa_release_json")
-alsa_file=$(jq -er --arg version "$alsa_version" \
-    '.assets[] | select(.name == ("alsa-ucm-conf_" + $version + "_all.deb")) | .name' \
-    "$alsa_release_json")
-alsa_url=$(jq -er --arg name "$alsa_file" \
-    '.assets[] | select(.name == $name) | .browser_download_url' "$alsa_release_json")
-alsa_deb="$stage/vendor/radxa/alsa/$alsa_file"
-download "$alsa_url" "$alsa_deb"
-alsa_data_member=$(ar t "$alsa_deb" | awk '
-    /^data\.tar\./ && !found {print; found=1}
-    END {if (!found) exit 1}
-')
-list_deb_data "$alsa_deb" "$alsa_data_member" >/dev/null || {
-    echo "ALSA UCM package contains an unreadable data archive: $alsa_file" >&2
+alsa_clone="$work_dir/alsa-ucm-conf"
+echo "Cloning Radxa ALSA UCM ${alsa_version} with submodule"
+git clone --depth=1 --branch "$alsa_version" --recurse-submodules \
+    "$ALSA_UCM_REPO" "$alsa_clone"
+[[ -d "$alsa_clone/src/ucm2" ]] || {
+    echo "ALSA UCM git checkout is missing src/ucm2 (submodule)" >&2
     exit 1
 }
-list_deb_data "$alsa_deb" "$alsa_data_member" | awk -F/ '
-    tolower($NF) ~ /^(copyright|license|copying)(\..*)?$/ {found=1}
-    END {exit !found}
-' || {
-    echo "ALSA UCM package has no license or copyright file: $alsa_file" >&2
+alsa_export="$work_dir/alsa-export/alsa-ucm-conf-${alsa_version}"
+mkdir -p "$alsa_export"
+rsync -a --exclude '.git' "$alsa_clone/" "$alsa_export/"
+alsa_archive="$stage/vendor/radxa/alsa/alsa-ucm-conf-${alsa_version}.tar.gz"
+tar -C "$work_dir/alsa-export" -czf "$alsa_archive" "alsa-ucm-conf-${alsa_version}"
+archive_has_license "$alsa_archive" || {
+    echo "ALSA UCM git archive has no license file" >&2
     exit 1
 }
 
@@ -189,6 +236,34 @@ replace_config "$config_file" RADXA_OVERLAYS_REF "$radxa_overlays_ref"
 replace_config "$config_file" ARMBIAN_REF "$armbian_ref"
 replace_config "$config_file" ALSA_UCM_VERSION "$alsa_version"
 replace_config "$config_file" FASTRPC_REF "$fastrpc_ref"
+replace_config "$config_file" FASTRPC_TAG "$FASTRPC_TAG"
+replace_config "$config_file" FASTRPC_VERSION "$fastrpc_version"
+
+echo "Resolving latest QAIRT Community Edition from Qualcomm Software Center"
+qairt_version=$(qairt_catalog_latest)
+qairt_url=$(qairt_zip_url "$qairt_version")
+qairt_target=$QAIRT_TARGET
+qairt_dsp_arch=${QAIRT_DSP_ARCH:-68}
+qairt_archive_sha256=$QAIRT_ARCHIVE_SHA256
+qairt_license_sha256=$QAIRT_LICENSE_SHA256
+if [[ "$qairt_version" != "$QAIRT_VERSION" || ! "$qairt_archive_sha256" =~ ^[0-9a-f]{64}$ || "$qairt_archive_sha256" =~ ^0{64}$ ]]; then
+    echo "Downloading QAIRT $qairt_version to verify HTP v68 runtime and checksums"
+    qairt_zip="$work_dir/v${qairt_version}.zip"
+    download "$qairt_url" "$qairt_zip"
+    qairt_archive_sha256=$(sha256_file "$qairt_zip")
+    qairt_target=$(qairt_pick_target "$qairt_zip" "$qairt_version") || {
+        echo "QAIRT $qairt_version is missing Hexagon v68 or an aarch64-oe-linux-gcc* runtime" >&2
+        exit 1
+    }
+    qairt_license_sha256=$(unzip -p "$qairt_zip" "qairt/${qairt_version}/LICENSE.pdf" | sha256sum | awk '{print $1}')
+    rm -f "$qairt_zip"
+fi
+replace_config "$config_file" QAIRT_VERSION "$qairt_version"
+replace_config "$config_file" QAIRT_DOWNLOAD_URL "$qairt_url"
+replace_config "$config_file" QAIRT_ARCHIVE_SHA256 "$qairt_archive_sha256"
+replace_config "$config_file" QAIRT_LICENSE_SHA256 "$qairt_license_sha256"
+replace_config "$config_file" QAIRT_TARGET "$qairt_target"
+replace_config "$config_file" QAIRT_DSP_ARCH "$qairt_dsp_arch"
 
 manifest="$stage/vendor/SHA256SUMS"
 (cd "$stage" && find vendor -type f ! -path vendor/SHA256SUMS -print | LC_ALL=C sort | \
@@ -203,18 +278,21 @@ RADXA_FIRMWARE_ARCHIVE_SHA256=$(sha256_file "$firmware_archive")
 RADXA_OVERLAYS_REF=$radxa_overlays_ref
 RADXA_OVERLAYS_ARCHIVE_SHA256=$(sha256_file "$overlays_archive")
 ALSA_UCM_VERSION=$alsa_version
-ALSA_UCM_DEB=$(basename "$alsa_deb")
-ALSA_UCM_DEB_SHA256=$(sha256_file "$alsa_deb")
+ALSA_UCM_ARCHIVE=$(basename "$alsa_archive")
+ALSA_UCM_ARCHIVE_SHA256=$(sha256_file "$alsa_archive")
 ARMBIAN_REF=$armbian_ref
 PATCH_MANIFEST_SHA256=$(sha256_file "$patch_manifest")
 FASTRPC_REF=$fastrpc_ref
+FASTRPC_TAG=$FASTRPC_TAG
+FASTRPC_VERSION=$fastrpc_version
+FASTRPC_ARCHIVE=vendor/qualcomm/fastrpc/fastrpc-${fastrpc_version}.tar.gz
 FASTRPC_ARCHIVE_SHA256=$(sha256_file "$fastrpc_archive")
-QAIRT_VERSION=$QAIRT_VERSION
-QAIRT_DOWNLOAD_URL=$QAIRT_DOWNLOAD_URL
-QAIRT_ARCHIVE_SHA256=$QAIRT_ARCHIVE_SHA256
-QAIRT_LICENSE_SHA256=$QAIRT_LICENSE_SHA256
-QAIRT_TARGET=$QAIRT_TARGET
-QAIRT_DSP_ARCH=$QAIRT_DSP_ARCH
+QAIRT_VERSION=$qairt_version
+QAIRT_DOWNLOAD_URL=$qairt_url
+QAIRT_ARCHIVE_SHA256=$qairt_archive_sha256
+QAIRT_LICENSE_SHA256=$qairt_license_sha256
+QAIRT_TARGET=$qairt_target
+QAIRT_DSP_ARCH=$qairt_dsp_arch
 EOF
 
 mkdir -p "$repo_root/vendor"

@@ -18,15 +18,17 @@ Version:        %{radxa_firmware_version}
 Release:        %{package_release}%{?dist}
 Summary:        Radxa Dragon Q8B supplemental Qualcomm firmware
 License:        Redistributable, see LICENSE
-URL:            https://github.com/radxa-pkg/radxa-firmware
+URL:            https://github.com/gjpin/fedora-dragon-q8b
 BuildArch:      noarch
+Requires:       qcom-firmware
 
 Source0:        radxa-firmware-%{radxa_firmware_ref}.tar.gz
+Source1:        firmware.files
 
 %description
-Supplemental SC8280XP and Dragon Q8B firmware from Radxa. Fedora's generic
-qcom-firmware package remains the owner of generic Qualcomm firmware; this
-package owns only the Radxa-specific firmware and DSP library paths.
+Supplemental Dragon Q8B firmware from Radxa. Fedora's qcom-firmware package
+owns generic Qualcomm blobs including LENOVO/21BX GPU ZAP reused by the Q8B
+DTS. This package installs only the Q8B-specific paths listed in firmware.files.
 
 %prep
 %setup -q -c -T
@@ -36,28 +38,74 @@ tar -xf %{SOURCE0}
 srcdir=$(find . -type d -name radxa-firmware-sc8280xp -print -quit)
 test -n "$srcdir"
 
-install -d %{buildroot}%{_prefix}/lib/firmware/qcom
-install -d %{buildroot}%{_datadir}/qcom/sc8280xp/radxa/dragon-q8b
-cp -a "$srcdir/lib/firmware/qcom/sc8280xp" %{buildroot}%{_prefix}/lib/firmware/qcom/
-cp -a "$srcdir/lib/firmware/qcom/vpu" %{buildroot}%{_prefix}/lib/firmware/qcom/
-cp -a "$srcdir/usr/share/qcom/sc8280xp/radxa/dragon-q8b/dsp" \
-    %{buildroot}%{_datadir}/qcom/sc8280xp/radxa/dragon-q8b/
-
+license=
 if [ -f LICENSE ]; then
-    install -Dpm0644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
+    license=LICENSE
 elif [ -f "$srcdir/../LICENSE" ]; then
-    install -Dpm0644 "$srcdir/../LICENSE" %{buildroot}%{_licensedir}/%{name}/LICENSE
+    license="$srcdir/../LICENSE"
 else
     echo "Radxa firmware license file was not found" >&2
     exit 1
 fi
+install -Dpm0644 "$license" %{buildroot}%{_licensedir}/%{name}/LICENSE
 
-%files
+rm -f q8b-firmware.files
+: > q8b-firmware.files
+append_filelist() {
+    relpath=$1
+    case "$relpath" in
+        lib/*)
+            printf '%%{_prefix}/%s\n' "$relpath" >> q8b-firmware.files
+            ;;
+        usr/share/*)
+            printf '%%{_datadir}/%s\n' "${relpath#usr/share/}" >> q8b-firmware.files
+            ;;
+        usr/*)
+            printf '/%s\n' "$relpath" >> q8b-firmware.files
+            ;;
+        *)
+            printf '/%s\n' "$relpath" >> q8b-firmware.files
+            ;;
+    esac
+}
+
+while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+        ''|\#*) continue ;;
+    esac
+    optional=0
+    relpath=$line
+    case "$relpath" in
+        optional:*)
+            optional=1
+            relpath=${relpath#optional:}
+            ;;
+    esac
+    src="$srcdir/$relpath"
+    if [ ! -e "$src" ]; then
+        if [ "$optional" -eq 1 ]; then
+            echo "optional firmware not in archive, skipping: $relpath"
+            continue
+        fi
+        echo "firmware path listed but missing from archive: $relpath" >&2
+        exit 1
+    fi
+    dest="%{buildroot}/$relpath"
+    if [ -d "$src" ]; then
+        install -d "$dest"
+        cp -a "$src"/. "$dest"/
+    else
+        install -Dpm0644 "$src" "$dest"
+    fi
+    append_filelist "$relpath"
+done < %{SOURCE1}
+
+%files -f q8b-firmware.files
 %license %{_licensedir}/%{name}/LICENSE
-%{_prefix}/lib/firmware/qcom/sc8280xp/
-%{_prefix}/lib/firmware/qcom/vpu/vpu20_p4_gen2_s6.mbn
-%{_datadir}/qcom/sc8280xp/radxa/dragon-q8b/dsp/
 
 %changelog
+* Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.2.41-2
+- Install only Q8B firmware paths from config/firmware.files.
+
 * Fri Aug 28 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.2.41-1
 - Package Radxa SC8280XP and Dragon Q8B supplemental firmware.

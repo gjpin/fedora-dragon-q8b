@@ -1,0 +1,15 @@
+# Q8B-only firmware and DSP paths, relative to radxa-firmware-sc8280xp/ in the
+# Radxa firmware archive. Destinations are under the system root (/).
+# Lines ending in / are copied recursively. Lines starting with optional: are
+# installed when present (AudioReach topology is not in the current archive).
+#
+# Do not own all of /usr/lib/firmware/qcom/sc8280xp/: Fedora qcom-firmware
+# owns LENOVO/21BX/ GPU ZAP that the DTS reuses. Do not ship the generic
+# SoC-root qcdxkmsuc8280.mbn.
+
+lib/firmware/qcom/sc8280xp/radxa/dragon-q8b/qcadsp8280.mbn
+lib/firmware/qcom/sc8280xp/qccdsp8280.mbn
+lib/firmware/qcom/sc8280xp/qupv3fw.elf
+lib/firmware/qcom/vpu/vpu20_p4_gen2_s6.mbn
+usr/share/qcom/sc8280xp/radxa/dragon-q8b/dsp/
+optional:lib/firmware/qcom/sc8280xp/SC8280XP-Radxa-Dragon-Q8B-tplg.bin

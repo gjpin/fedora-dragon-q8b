@@ -43,7 +43,7 @@ die() { echo "patch-redundancy: $*" >&2; exit 1; }
 [[ -r "$patch_list" ]] || die "missing patch list: $patch_list"
 [[ -n "$output" ]] || { usage >&2; exit 2; }
 
-for command in git fedpkg rpmbuild cp find awk grep mktemp; do
+for command in git fedpkg rpmbuild cp find awk grep mktemp diff; do
     command -v "$command" >/dev/null || die "missing required command: $command"
 done
 
@@ -159,3 +159,63 @@ if [[ $review -gt 0 ]]; then
     echo "one or more patches require semantic/manual review" >&2
     exit 1
 fi
+
+# Combined COPR patch is REQUIRED queue entries, the Q8B DTS new-file patch,
+# and a Makefile hunk generated from the Fedora tree after %prep plus the
+# REQUIRED patches (so the hunk applies at the end of the combined patch).
+dts_patch="$kernel_dir/dragon-q8b-dts.patch"
+[[ -r "$dts_patch" ]] || die "missing DTS patch from prepare-kernel-source: $dts_patch"
+makefile="$working_tree/arch/arm64/boot/dts/qcom/Makefile"
+[[ -r "$makefile" ]] || die "missing Fedora DTS Makefile after rpmbuild -bp: $makefile"
+makefile_hunk="$kernel_dir/dragon-q8b-dts-makefile.patch"
+: > "$makefile_hunk"
+if grep -Fq 'sc8280xp-radxa-dragon-q8b.dtb' "$makefile"; then
+    echo "Makefile already lists sc8280xp-radxa-dragon-q8b.dtb; skipping Makefile hunk"
+else
+    last_line=$(grep 'sc8280xp-.*\.dtb' "$makefile" | tail -n1 || true)
+    [[ -n "$last_line" ]] || die "no sc8280xp dtb line in Fedora qcom Makefile"
+    new_line=$(printf '%s\n' "$last_line" | sed 's/=.*/= sc8280xp-radxa-dragon-q8b.dtb/')
+    orig=$(mktemp)
+    tmp=$(mktemp)
+    diffout=$(mktemp)
+    cp "$makefile" "$orig"
+    awk -v insert="$new_line" '
+        { lines[NR]=$0 }
+        /sc8280xp-.*\.dtb/ { last=NR }
+        END {
+            if (!last) exit 1
+            for (i = 1; i <= NR; i++) {
+                print lines[i]
+                if (i == last) print insert
+            }
+        }
+    ' "$orig" > "$tmp" || die "could not insert Q8B dtb line into Makefile"
+    diff_ec=0
+    diff -u "$orig" "$tmp" > "$diffout" || diff_ec=$?
+    [[ "$diff_ec" -eq 1 ]] || die "diff failed generating Makefile hunk (exit $diff_ec)"
+    {
+        printf '%s\n' 'diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile'
+        printf '%s\n' '--- a/arch/arm64/boot/dts/qcom/Makefile'
+        printf '%s\n' '+++ b/arch/arm64/boot/dts/qcom/Makefile'
+        awk 'NR > 2 { print }' "$diffout"
+    } > "$makefile_hunk"
+    rm -f "$orig" "$tmp" "$diffout"
+    grep -q '^@@ ' "$makefile_hunk" || die "generated Makefile hunk is missing a unified-diff header"
+fi
+
+combined_patch="$kernel_dir/dragon-q8b-kernel.patch"
+: > "$combined_patch"
+while IFS=$'\t' read -r patch_name status _fedora_exact action; do
+    [[ "$patch_name" == *.patch ]] || continue
+    [[ "$action" == apply && "$status" == REQUIRED ]] || continue
+    cat "$patch_dir/$patch_name" >> "$combined_patch"
+    printf '\n' >> "$combined_patch"
+done < "$output"
+cat "$dts_patch" >> "$combined_patch"
+printf '\n' >> "$combined_patch"
+if [[ -s "$makefile_hunk" ]]; then
+    cat "$makefile_hunk" >> "$combined_patch"
+    printf '\n' >> "$combined_patch"
+fi
+[[ -s "$combined_patch" ]] || die "combined kernel patch is empty"
+echo "Combined kernel patch (REQUIRED + DTS + Makefile hunk): $combined_patch"

@@ -34,7 +34,7 @@ copr_repo=""
 rpm_dir=""
 image_file=""
 target_release="${FEDORA_RELEASE:-44}"
-image_url="${FEDORA_CLOUD_IMAGE_URL:-https://download.fedoraproject.org/pub/fedora/linux/releases/${target_release}/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-${target_release}-1.7.aarch64.qcow2}"
+image_url=""
 firmware_code=""
 accel="auto"
 cpu_type="auto"
@@ -43,7 +43,6 @@ smp="4"
 timeout_sec=3000
 output_dir=""
 dry_run=0
-custom_image_url=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -51,13 +50,10 @@ while [[ $# -gt 0 ]]; do
         --rpm-dir) rpm_dir=${2:?missing RPM directory}; shift 2 ;;
         --release)
             target_release=${2:?missing release number}
-            if [[ $custom_image_url -eq 0 ]]; then
-                image_url="https://download.fedoraproject.org/pub/fedora/linux/releases/${target_release}/Cloud/aarch64/images/Fedora-Cloud-Base-Generic-${target_release}-1.7.aarch64.qcow2"
-            fi
             shift 2
             ;;
         --image) image_file=${2:?missing image file}; shift 2 ;;
-        --image-url) image_url=${2:?missing image URL}; custom_image_url=1; shift 2 ;;
+        --image-url) image_url=${2:?missing image URL}; shift 2 ;;
         --firmware) firmware_code=${2:?missing firmware file}; shift 2 ;;
         --accel) accel=${2:?missing accelerator}; shift 2 ;;
         --cpu) cpu_type=${2:?missing CPU model}; shift 2 ;;
@@ -168,6 +164,36 @@ detect_accelerator() {
 qemu_cmd=$(find_qemu)
 find_uefi_firmware
 detect_accelerator
+
+resolve_fedora_cloud_image_url() {
+    local images_url name checksum_text listing
+    if [[ "$target_release" == "${FEDORA_RELEASE:-44}" && -n "${FEDORA_CLOUD_IMAGES_URL:-}" ]]; then
+        images_url=$FEDORA_CLOUD_IMAGES_URL
+    else
+        images_url="https://download.fedoraproject.org/pub/fedora/linux/releases/${target_release}/Cloud/aarch64/images/"
+    fi
+    images_url=${images_url%/}/
+    checksum_text=$(curl -fsSL "${images_url}CHECKSUM" 2>/dev/null || true)
+    name=$(printf '%s\n' "$checksum_text" | awk '
+        match($0, /Fedora-Cloud-Base-Generic-[^ )]+[.]aarch64[.]qcow2/) {
+            print substr($0, RSTART, RLENGTH)
+            exit
+        }
+    ')
+    if [[ -z "$name" ]]; then
+        listing=$(curl -fsSL "$images_url" 2>/dev/null || true)
+        name=$(printf '%s\n' "$listing" | grep -oE 'Fedora-Cloud-Base-Generic-[^"<> ]+\.aarch64\.qcow2' | sort -u | tail -n1)
+    fi
+    [[ -n "$name" ]] || {
+        echo "could not resolve Fedora Cloud Generic qcow2 from $images_url" >&2
+        exit 1
+    }
+    image_url="${images_url}${name}"
+}
+
+if [[ -z "$image_file" && -z "$image_url" ]]; then
+    resolve_fedora_cloud_image_url
+fi
 
 work_dir=$(mktemp -d -t dragon-q8b-qemu-vm.XXXXXX)
 # shellcheck disable=SC2329
@@ -304,37 +330,19 @@ dnf_cmd=$(command -v dnf5 2>/dev/null || command -v dnf 2>/dev/null || echo "dnf
 
 if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
     if [[ "$copr_target" != */* ]]; then
-        copr_target="gjpin/$copr_target"
+        echo "COPR must be OWNER/PROJECT (got: $copr_target)" >&2
+        exit 1
     fi
-    repo_owner="${copr_target%/*}"
-    repo_name="${copr_target#*/}"
-    fedora_ver=$(rpm -E '%{fedora}' 2>/dev/null || echo "44")
-    copr_repo_url="https://copr.fedorainfracloud.org/coprs/${repo_owner}/${repo_name}/repo/fedora-${fedora_ver}/${repo_owner}-${repo_name}-fedora-${fedora_ver}.repo"
-    
-    mkdir -p /etc/yum.repos.d
-    copr_configured=0
-    for attempt in {1..5}; do
-        for ver in "${fedora_ver}" "44" "rawhide" "43" "42" "41"; do
-            repo_url="https://copr.fedorainfracloud.org/coprs/${repo_owner}/${repo_name}/repo/fedora-${ver}/${repo_owner}-${repo_name}-fedora-${ver}.repo"
-            if curl -fsSL --retry 2 --connect-timeout 10 "$repo_url" -o "/etc/yum.repos.d/_copr:${repo_owner}:${repo_name}.repo" 2>/dev/null; then
-                if grep -q '\[.*copr.*\]' "/etc/yum.repos.d/_copr:${repo_owner}:${repo_name}.repo" 2>/dev/null; then
-                    echo "Successfully configured COPR repository (fedora-$ver)"
-                    copr_configured=1
-                    break 2
-                else
-                    rm -f "/etc/yum.repos.d/_copr:${repo_owner}:${repo_name}.repo"
-                fi
-            fi
-        done
-        if "$dnf_cmd" -y copr enable "$copr_target" 2>/dev/null || "$dnf_cmd" copr enable -y "$copr_target" 2>/dev/null; then
-            echo "Successfully enabled COPR repository via $dnf_cmd"
-            copr_configured=1
-            break
-        fi
-        echo "COPR enable attempt $attempt failed, retrying in 3s..."
-        sleep 3
-    done
-    
+    fedora_ver=$(rpm -E '%{fedora}' 2>/dev/null || true)
+    [[ -n "$fedora_ver" ]] || {
+        echo "could not detect Fedora release for COPR enable" >&2
+        exit 1
+    }
+    if ! "$dnf_cmd" copr --help >/dev/null 2>&1; then
+        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf-plugins-core >/dev/null 2>&1 || \
+            "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf5-plugins || true
+    fi
+    "$dnf_cmd" -y copr enable "$copr_target" 
     if [[ -x "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" ]]; then
         echo "Running bootstrap-fedora-dragon-q8b.sh from repository..."
         bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --copr "$copr_target"

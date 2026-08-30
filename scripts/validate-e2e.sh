@@ -121,7 +121,7 @@ core_packages=(
     dragon-q8b-overlays
     dragon-q8b-alsa-ucm
     dragon-q8b-fastrpc
-    dragon-q8b-qnn
+    fastrpc
 )
 
 for pkg in "${core_packages[@]}"; do
@@ -133,14 +133,23 @@ for pkg in "${core_packages[@]}"; do
     fi
 done
 
+if rpm -q dragon-q8b-qnn >/dev/null 2>&1; then
+    local_nvr=$(rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}\n' dragon-q8b-qnn | head -n 1)
+    log_ok "RPM dragon-q8b-qnn is installed ($local_nvr)"
+else
+    log_skip "RPM dragon-q8b-qnn is installed" "Recommends only; not required by dragon-q8b-support"
+fi
+
 base_deps=(
     qrtr
     tqftpserv
     bluez
     alsa-ucm
     qcom-firmware
+    pd-mapper
     dracut
     grubby
+    dtc
 )
 for pkg in "${base_deps[@]}"; do
     if rpm -q "$pkg" >/dev/null 2>&1; then
@@ -276,6 +285,22 @@ if [[ -d "$overlay_dir" ]]; then
     else
         log_fail "FPC PCIe overlay present" "missing sc8280xp-radxa-dragon-q8b-fpc-pcie.dtbo"
     fi
+    if [[ -f "$overlay_dir/sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo" ]]; then
+        log_ok "Heatsink 6845B pwm-fan overlay is present"
+    else
+        log_fail "Heatsink 6845B pwm-fan overlay present" "missing sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo"
+    fi
+
+    if [[ -x /usr/sbin/dragon-q8b-overlay ]]; then
+        log_ok "Overlay helper dragon-q8b-overlay is executable"
+        if dragon-q8b-overlay list >/dev/null 2>&1; then
+            log_ok "Overlay helper list succeeded"
+        else
+            log_fail "Overlay helper list" "dragon-q8b-overlay list failed"
+        fi
+    else
+        log_fail "Overlay helper executable" "missing /usr/sbin/dragon-q8b-overlay"
+    fi
     
     if command -v dtc >/dev/null 2>&1; then
         dtbo_valid=1
@@ -305,10 +330,23 @@ dracut_conf="/etc/dracut.conf.d/40-dragon-q8b.conf"
 if [[ -f "$dracut_conf" ]]; then
     log_ok "Dracut configuration file $dracut_conf exists"
     
-    if grep -Eq '(add_drivers|force_drivers)\+=.*qcom_q6v5_pas' "$dracut_conf"; then
-        log_ok "Dracut configuration includes Qualcomm remoteproc drivers"
+    if grep -Eq 'force_drivers\+=.*qcom_q6v5_pas' "$dracut_conf" \
+        && grep -Eq 'force_drivers\+=.*ufs_qcom' "$dracut_conf" \
+        && grep -Eq 'force_drivers\+=.*sdhci_msm' "$dracut_conf"; then
+        log_ok "Dracut configuration includes Qualcomm remoteproc and storage drivers"
     else
-        log_fail "Dracut remoteproc drivers" "qcom_q6v5_pas missing in $dracut_conf"
+        log_fail "Dracut remoteproc/storage drivers" "qcom_q6v5_pas/ufs_qcom/sdhci_msm missing in $dracut_conf"
+    fi
+
+    if grep -q 'LENOVO/21BX/qcdxkmsuc8280.mbn' "$dracut_conf"; then
+        log_ok "Dracut configuration includes Fedora-owned Lenovo GPU ZAP firmware"
+    else
+        log_fail "Dracut GPU ZAP path" "LENOVO/21BX ZAP missing in $dracut_conf"
+    fi
+    if grep -Eq '/lib/firmware/qcom/sc8280xp/qcdxkmsuc8280.mbn' "$dracut_conf"; then
+        log_fail "Dracut does not claim SoC-root GPU ZAP" "generic qcdxkmsuc8280.mbn remains in $dracut_conf"
+    else
+        log_ok "Dracut configuration does not claim SoC-root qcdxkmsuc8280.mbn"
     fi
     
     if grep -Eq '(install_items|install_optional_items)' "$dracut_conf" && grep -q 'qcom' "$dracut_conf"; then
@@ -332,6 +370,18 @@ if [[ -x "$refresh_boot" ]]; then
     fi
 else
     log_fail "Boot refresh script exists and executable" "missing $refresh_boot"
+fi
+
+cmdline_d="/usr/lib/kernel/cmdline.d/50-dragon-q8b.conf"
+if [[ -f "$cmdline_d" ]] && grep -qx 'clk_ignore_unused' "$cmdline_d"; then
+    log_ok "kernel-install cmdline.d ships clk_ignore_unused only"
+else
+    log_fail "kernel-install cmdline.d" "missing $cmdline_d or unexpected default cmdline"
+fi
+if [[ -x /usr/lib/kernel/install.d/50-dragon-q8b.install && -x /usr/lib/kernel/install.d/91-dragon-q8b.install ]]; then
+    log_ok "kernel-install plugins 50-dragon-q8b and 91-dragon-q8b are installed"
+else
+    log_fail "kernel-install plugins" "missing 50/91-dragon-q8b.install"
 fi
 
 if [[ $skip_dracut_build -eq 0 ]] && command -v dracut >/dev/null 2>&1; then
@@ -430,15 +480,26 @@ else
     log_fail "Qualcomm FastRPC libraries installed" "libcdsprpc or libadsprpc missing under /usr/lib64 or /usr/lib"
 fi
 
-if [[ -f /usr/lib/udev/rules.d/60-dragon-q8b-fastrpc.rules ]]; then
-    log_ok "FastRPC udev rules file 60-dragon-q8b-fastrpc.rules exists"
-    if grep -q 'fastrpc' /usr/lib/udev/rules.d/60-dragon-q8b-fastrpc.rules; then
-        log_ok "FastRPC udev rules configure /dev/fastrpc* device permissions"
+if [[ -f /usr/lib/udev/rules.d/60-fastrpc.rules ]]; then
+    log_ok "FastRPC udev rules file 60-fastrpc.rules exists"
+    if grep -q 'MODE="0640"' /usr/lib/udev/rules.d/60-fastrpc.rules && grep -q 'GROUP="fastrpc"' /usr/lib/udev/rules.d/60-fastrpc.rules; then
+        log_ok "FastRPC udev rules use 0640 and group fastrpc"
     else
-        log_fail "FastRPC udev rules content" "missing fastrpc device matches"
+        log_fail "FastRPC udev rules permissions" "expected MODE=0640 and GROUP=fastrpc"
+    fi
+    if grep -q '0666' /usr/lib/udev/rules.d/60-fastrpc.rules; then
+        log_fail "FastRPC udev rules are not world-writable" "0666 remains in 60-fastrpc.rules"
+    else
+        log_ok "FastRPC udev rules are not world-writable"
     fi
 else
-    log_fail "FastRPC udev rules file exists" "missing /usr/lib/udev/rules.d/60-dragon-q8b-fastrpc.rules"
+    log_fail "FastRPC udev rules file exists" "missing /usr/lib/udev/rules.d/60-fastrpc.rules"
+fi
+
+if command -v dsp_check >/dev/null 2>&1; then
+    log_ok "dsp_check is installed"
+else
+    log_skip "dsp_check is installed" "not shipped by FastRPC 1.0.6"
 fi
 
 fastrpc_profile="/etc/profile.d/dragon-q8b-fastrpc.sh"
@@ -459,6 +520,9 @@ fi
 echo
 echo "--- Section 9: QNN / QAIRT Integration ---"
 
+if ! rpm -q dragon-q8b-qnn >/dev/null 2>&1; then
+    log_skip "QNN / QAIRT integration" "dragon-q8b-qnn is a Recommends and is not installed"
+else
 qnn_sync="/usr/libexec/dragon-q8b-qnn-sync"
 if [[ -x "$qnn_sync" ]]; then
     log_ok "QNN installer and validator $qnn_sync is executable"
@@ -477,11 +541,11 @@ else
     log_fail "QNN CLI command present" "missing /usr/bin/dragon-q8b-qnn"
 fi
 
-qnn_config=/etc/dragon-q8b/qnn.conf
+qnn_config=/usr/lib/dragon-q8b/qnn.conf
 if [[ -f "$qnn_config" ]] && grep -Eq '^QAIRT_ARCHIVE_SHA256=[[:xdigit:]]{64}$' "$qnn_config"; then
-    log_ok "QNN configuration pins the official QAIRT archive checksum"
+    log_ok "QNN packaged configuration pins the official QAIRT archive checksum"
 else
-    log_fail "QNN pinned QAIRT configuration" "missing or invalid $qnn_config"
+    log_fail "QNN packaged QAIRT configuration" "missing or invalid $qnn_config"
 fi
 
 if [[ -f /etc/profile.d/dragon-q8b-qnn.sh && -f /etc/ld.so.conf.d/dragon-q8b-qnn.conf ]]; then
@@ -499,6 +563,7 @@ if [[ -x "$qnn_sync" ]]; then
         log_skip "QAIRT hardware runtime validation" "requires an installed SDK on physical Dragon Q8B hardware"
     fi
 fi
+fi
 
 # -----------------------------------------------------------------------------
 # Section 10: ALSA UCM Profiles
@@ -510,7 +575,7 @@ ucm_dir="/etc/alsa/ucm2/Qualcomm/sc8280xp"
 if [[ -d "$ucm_dir" ]]; then
     log_ok "ALSA UCM Qualcomm SC8280XP directory exists ($ucm_dir)"
     
-    ucm_files=("Dragon-Q8B-HiFi.conf" "Radxa-Dragon-Q8B.conf" "sc8280xp.conf")
+    ucm_files=("Dragon-Q8B-HiFi.conf" "Radxa-Dragon-Q8B.conf")
     for f in "${ucm_files[@]}"; do
         if [[ -f "$ucm_dir/$f" ]]; then
             log_ok "ALSA UCM profile file $f is present"
@@ -523,6 +588,17 @@ if [[ -d "$ucm_dir" ]]; then
             log_fail "ALSA UCM profile file $f exists" "missing $ucm_dir/$f"
         fi
     done
+    if [[ -f "$ucm_dir/sc8280xp.conf" ]]; then
+        log_fail "ALSA UCM does not replace Fedora sc8280xp.conf" "unexpected $ucm_dir/sc8280xp.conf"
+    else
+        log_ok "ALSA UCM overlay does not replace Fedora sc8280xp.conf"
+    fi
+    confd="/etc/alsa/ucm2/conf.d/sc8280xp/RadxaComputerCo.Ltd.-RadxaDragonQ8B.conf"
+    if [[ -f "$confd" ]] && grep -q 'Radxa-Dragon-Q8B.conf' "$confd"; then
+        log_ok "ALSA UCM conf.d DMI match is installed"
+    else
+        log_fail "ALSA UCM conf.d DMI match" "missing $confd"
+    fi
 else
     log_fail "ALSA UCM directory exists" "missing directory $ucm_dir"
 fi
@@ -536,6 +612,8 @@ echo "--- Section 11: Systemd Unit Enablement ---"
 if command -v systemctl >/dev/null 2>&1; then
     units_to_check=(
         "dragon-q8b-bt.service"
+        "dragon-q8b-thermal.service"
+        "pd-mapper.service"
     )
     for u in "${units_to_check[@]}"; do
         if systemctl list-unit-files "$u" >/dev/null 2>&1; then
@@ -586,10 +664,10 @@ fi
 thermal_conf="/etc/dragon-q8b/thermal.conf"
 if [[ -f "$thermal_conf" ]]; then
     log_ok "Thermal configuration file $thermal_conf exists"
-    if grep -Eq '^[[:space:]]*GOVERNOR=' "$thermal_conf"; then
-        log_ok "Thermal configuration defines GOVERNOR policy"
+    if grep -Eq '^[[:space:]]*GOVERNOR=power_allocator' "$thermal_conf"; then
+        log_ok "Thermal configuration defaults to power_allocator"
     else
-        log_fail "Thermal configuration GOVERNOR setting" "GOVERNOR definition missing in $thermal_conf"
+        log_fail "Thermal configuration default governor" "expected GOVERNOR=power_allocator in $thermal_conf"
     fi
 else
     log_fail "Thermal configuration file exists" "missing $thermal_conf"

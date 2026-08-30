@@ -26,7 +26,7 @@ jobs:
       - name: Install refresh tools
         run: |
           dnf -y install \
-            bash coreutils curl git git-lfs jq binutils ShellCheck tar xz gh
+            bash coreutils curl git git-lfs jq binutils ShellCheck tar xz unzip python3 gh
           repo_root="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is unset}"
           git config --global --add safe.directory "$repo_root"
           git -C "$repo_root" lfs install --local
@@ -40,7 +40,11 @@ jobs:
           bash scripts/validate-vendor.sh
           shellcheck scripts/*.sh \
             packaging/boot/dragon-q8b-bt-address \
-            packaging/boot/dragon-q8b-refresh-boot
+            packaging/boot/dragon-q8b-refresh-boot \
+            packaging/boot/dragon-q8b-thermal \
+            packaging/boot/50-dragon-q8b.install \
+            packaging/boot/91-dragon-q8b.install \
+            packaging/overlays/dragon-q8b-overlay
           git diff --check
       - name: Open or update vendor refresh pull request
         env:
@@ -61,7 +65,7 @@ jobs:
               --base main \
               --head "$branch" \
               --title 'chore: refresh vendored Dragon Q8B inputs' \
-              --body 'Generated from the current Radxa, Armbian, and ALSA inputs. CI builds this exact vendored snapshot with Fedora kernel sources; review kernel changes and validate hardware before merging.' \
+              --body 'Generated from the current Radxa, Armbian, ALSA, FastRPC, and Qualcomm Software Center QAIRT inputs. CI builds this exact vendored snapshot with Fedora kernel sources; review kernel changes and validate hardware before merging.' \
               || true
           else
             echo 'Vendored inputs are already current.'

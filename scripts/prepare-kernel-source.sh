@@ -7,7 +7,9 @@ Usage: prepare-kernel-source.sh --output DIR [--release N]
 
 Prepare a Fedora kernel dist-git checkout for a Dragon Q8B build.
 The output directory contains a Fedora kernel source tree with the pinned
-SC8280XP/Q8B patch series and kernel-local configuration fragment.
+SC8280XP/Q8B patch series copied aside, kernel-local from config/kernel-local,
+and a separate DTS patch. The combined COPR patch is written later by
+check-patch-redundancy.sh from REQUIRED patches plus that DTS patch.
 EOF
 }
 
@@ -52,10 +54,15 @@ for command in git awk sed grep patch cp find mkdir sha256sum; do
 done
 
 radxa_dts_file="$repo_root/vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts"
+kernel_local_file="$repo_root/config/kernel-local"
 armbian_patch_dir="$repo_root/vendor/armbian/sc8280xp-edge-patches"
 armbian_dts_patch=0005-arm64-dts-sc8280xp-add-radxa-dragon-q8b.patch
 [[ -r "$radxa_dts_file" ]] || {
     echo "missing vendored Radxa Q8B DTS: $radxa_dts_file" >&2
+    exit 1
+}
+[[ -r "$kernel_local_file" ]] || {
+    echo "missing kernel-local fragment: $kernel_local_file" >&2
     exit 1
 }
 [[ -d "$armbian_patch_dir" ]] || {
@@ -74,7 +81,8 @@ for marker in \
     'qcom/sc8280xp/radxa/dragon-q8b/qcadsp8280.mbn' \
     'qcom/vpu/vpu20_p4_gen2_s6.mbn' \
     'QPS615' \
-    'qcom,wcd9385-codec'; do
+    'qcom,wcd9385-codec' \
+    'qcom,no-battery'; do
     grep -Fq "$marker" <<<"$radxa_dts" || {
         echo "Radxa Q8B DTS is missing expected marker: $marker" >&2
         exit 1
@@ -148,27 +156,12 @@ while IFS= read -r patch_name; do
     fi
 done < "$list"
 
-combined_patch="$kernel_dir/dragon-q8b-kernel.patch"
-: > "$combined_patch"
-while IFS= read -r patch_name; do
-    [[ -z "$patch_name" || "$patch_name" == \#* ]] && continue
-    cat "$patch_dir/$patch_name" >> "$combined_patch"
-    printf '\n' >> "$combined_patch"
-done < "$list"
-
-# Add the Q8B board file from the pinned Radxa kernel verbatim. Armbian remains
-# a source only for portable driver/SoC changes; it is never a DTS authority.
+# Separate DTS patch: new-file insert of the Radxa board DTS only. The Fedora
+# qcom Makefile hunk is generated later from the actual post-%prep Makefile
+# in check-patch-redundancy.sh so it is not frozen to a line number.
 dts_lines=$(awk 'END {print NR}' "$radxa_dts_file")
+dts_patch="$kernel_dir/dragon-q8b-dts.patch"
 {
-cat <<'EOF'
-diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
---- a/arch/arm64/boot/dts/qcom/Makefile
-+++ b/arch/arm64/boot/dts/qcom/Makefile
-@@ -294,2 +294,3 @@
-EOF
-printf ' %s\t%s\n' "dtb-\$(CONFIG_ARCH_QCOM)" '+= sc8280xp-microsoft-blackrock.dtb sc8280xp-microsoft-blackrock-el2.dtb'
-printf '+%s\t%s\n' "dtb-\$(CONFIG_ARCH_QCOM)" '+= sc8280xp-radxa-dragon-q8b.dtb'
-printf ' %s\t%s\n' "dtb-\$(CONFIG_ARCH_QCOM)" '+= sda660-inforce-ifc6560.dtb'
 cat <<EOF
 diff --git a/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts b/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts
 new file mode 100644
@@ -178,102 +171,20 @@ new file mode 100644
 EOF
 sed 's/^/+/' "$radxa_dts_file"
 printf '\n'
-} >> "$combined_patch"
+} > "$dts_patch"
 
-# Fedora's kernel spec intentionally uses kernel-local for downstream config
-# fragments. Keep the fragment small and let Fedora's config merger validate
-# symbols that are not available in a particular release.
-cat > "$kernel_dir/kernel-local" <<'EOF'
-# Dragon Q8B / Qualcomm SC8280XP support.
-CONFIG_OF_OVERLAY=y
-CONFIG_EFI=y
-CONFIG_EFI_ZBOOT=y
-CONFIG_MODULE_COMPRESS_ZSTD=y
-# CONFIG_MODULE_COMPRESS_XZ is not set
-
-# Drivers needed before rootfs availability or by Q8B firmware hand-off.
-CONFIG_QCOM_Q6V5_PAS=m
-CONFIG_QCOM_PDR_HELPERS=m
-CONFIG_QCOM_QMI_HELPERS=m
-CONFIG_QCOM_GLINK=y
-CONFIG_QCOM_GLINK_SMEM=y
-CONFIG_QCOM_RPROC_COMMON=m
-CONFIG_QCOM_PMIC_GLINK=m
-CONFIG_QCOM_QRNG=y
-CONFIG_QCOM_SMEM=y
-CONFIG_QCOM_SPMI_ADC5=m
-CONFIG_QCOM_SPMI_TEMP_ALARM=m
-CONFIG_QCOM_SPMI_VADC=m
-CONFIG_QCOM_SPMI_ADC5_GEN3=m
-CONFIG_QCOM_STATS=m
-CONFIG_QCOM_WCNSS_CTRL=m
-CONFIG_QCOM_WCNSS_PIL=m
-CONFIG_QCOM_FASTRPC=m
-CONFIG_QCOM_RPMH=y
-CONFIG_QCOM_RPMHPD=y
-CONFIG_QCOM_SCM=y
-CONFIG_QCOM_COMMAND_DB=y
-CONFIG_QCOM_LLCC=y
-CONFIG_QCOM_OCMEM=y
-
-CONFIG_PHY_QCOM_QMP=y
-CONFIG_PHY_QCOM_QMP_PCIE=y
-CONFIG_PHY_QCOM_QMP_USB=y
-CONFIG_PHY_QCOM_USB_HS=m
-CONFIG_PHY_QCOM_USB_SNPS_FEMTO_V2=y
-CONFIG_USB_DWC3=y
-CONFIG_USB_DWC3_DUAL_ROLE=y
-CONFIG_USB_DWC3_HOST=y
-CONFIG_USB_DWC3_QCOM=y
-CONFIG_USB_DWC3_OF_SIMPLE=y
-CONFIG_USB_XHCI_PLATFORM=y
-
-CONFIG_PCIE_QCOM=y
-CONFIG_MMC_SDHCI=m
-CONFIG_MMC_SDHCI_MSM=m
-CONFIG_SCSI_UFSHCD=m
-CONFIG_SCSI_UFSHCD_PLATFORM=m
-CONFIG_SCSI_UFS_QCOM=m
-
-CONFIG_SOUNDWIRE=m
-CONFIG_SOUNDWIRE_QCOM=m
-CONFIG_SND_SOC_QCOM=m
-CONFIG_SND_SOC_WCD938X=m
-CONFIG_SND_SOC_SC8280XP=m
-
-CONFIG_DRM_MSM=m
-CONFIG_DRM_MSM_HDMI=y
-CONFIG_DRM_MSM_DPU=y
-CONFIG_DRM_DP_AUX_CHARDEV=y
-CONFIG_DRM_PANEL_BRIDGE=y
-
-CONFIG_VIDEO_QCOM_IRIS=m
-CONFIG_VIDEO_QCOM_VENUS=m
-CONFIG_QCOM_TSENS=m
-CONFIG_GPIO_REGMAP=y
-CONFIG_GPIO_QCOM=y
-CONFIG_GPIO_TC956X=m
-CONFIG_TOSHIBA_TC956X_PCI=m
-CONFIG_DWMAC_TC956X=m
-CONFIG_I2C_QUP=y
-CONFIG_SPI_QUP=y
-CONFIG_SERIAL_QCOM_GENI=y
-CONFIG_SERIAL_QCOM_GENI_CONSOLE=y
-EOF
+cp "$kernel_local_file" "$kernel_dir/kernel-local"
 
 spec="$kernel_dir/kernel.spec"
 grep -q '^Patch3003: dragon-q8b-kernel.patch$' "$spec" || \
     sed -i '/^Patch999999: linux-kernel-test.patch$/i Patch3003: dragon-q8b-kernel.patch' "$spec"
-grep -q '^ApplyOptionalPatch dragon-q8b-kernel.patch$' "$spec" || \
-    sed -i '/^ApplyOptionalPatch linux-kernel-test.patch$/a ApplyOptionalPatch dragon-q8b-kernel.patch' "$spec"
-
-# The downstream fragment intentionally changes Fedora's stock tristate
-# choices for Q8B hardware. Keep Fedora's generated configs, but do not make
-# those expected downstream changes fatal during the source-RPM prep.
-grep -q '^# Dragon Q8B disables Fedora config mismatch checks$' "$spec" || \
-    sed -i '/^%prep$/i\
-# Dragon Q8B disables Fedora config mismatch checks\
-%define with_configchecks 0' "$spec"
+# Combined patch is non-empty (REQUIRED + DTS). Use ApplyPatch so Fedora does
+# not skip it; ApplyOptionalPatch is only for empty files.
+if grep -q '^ApplyOptionalPatch dragon-q8b-kernel.patch$' "$spec"; then
+    sed -i 's/^ApplyOptionalPatch dragon-q8b-kernel.patch$/ApplyPatch dragon-q8b-kernel.patch/' "$spec"
+fi
+grep -q '^ApplyPatch dragon-q8b-kernel.patch$' "$spec" || \
+    sed -i '/^ApplyOptionalPatch linux-kernel-test.patch$/a ApplyPatch dragon-q8b-kernel.patch' "$spec"
 
 # Fedora's documented buildid mechanism makes the package distinguishable
 # from the stock kernel while preserving the normal kernel subpackage names.
@@ -294,8 +205,11 @@ RADXA_FIRMWARE_REF=$RADXA_FIRMWARE_REF
 ARMBIAN_REF=$ARMBIAN_REF
 KERNEL_BUILD_ID=$KERNEL_BUILD_ID
 PATCH_MANIFEST=$manifest_for_build
+DTS_PATCH=$dts_patch
 EOF
 
 echo "Prepared Fedora kernel source: $kernel_dir"
 echo "Fedora commit: $fedora_commit"
+echo "DTS patch: $dts_patch"
 echo "Patch manifest: $manifest"
+echo "Run check-patch-redundancy.sh to write dragon-q8b-kernel.patch (REQUIRED + DTS + Makefile hunk)."

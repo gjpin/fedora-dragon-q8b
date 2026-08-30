@@ -18,7 +18,7 @@ Options:
 
 Known packages:
   kernel, dragon-q8b-firmware, dragon-q8b-boot, dragon-q8b-overlays,
-  dragon-q8b-alsa-ucm, dragon-q8b-fastrpc, dragon-q8b-qnn,
+  dragon-q8b-alsa-ucm, fastrpc, dragon-q8b-qnn,
   dragon-q8b-kernel, dragon-q8b-support
 EOF
 }
@@ -29,7 +29,7 @@ ALL_PACKAGES=(
     dragon-q8b-boot
     dragon-q8b-overlays
     dragon-q8b-alsa-ucm
-    dragon-q8b-fastrpc
+    fastrpc
     dragon-q8b-qnn
     dragon-q8b-kernel
     dragon-q8b-support
@@ -42,7 +42,7 @@ normalize_pkg_name() {
         boot|dragon-q8b-boot) echo "dragon-q8b-boot" ;;
         overlays|dragon-q8b-overlays) echo "dragon-q8b-overlays" ;;
         alsa|alsa-ucm|dragon-q8b-alsa|dragon-q8b-alsa-ucm) echo "dragon-q8b-alsa-ucm" ;;
-        fastrpc|dragon-q8b-fastrpc) echo "dragon-q8b-fastrpc" ;;
+        fastrpc|dragon-q8b-fastrpc) echo "fastrpc" ;;
         qnn|dragon-q8b-qnn) echo "dragon-q8b-qnn" ;;
         kernel-meta|dragon-q8b-kernel) echo "dragon-q8b-kernel" ;;
         meta|support|dragon-q8b-support) echo "dragon-q8b-support" ;;
@@ -146,6 +146,8 @@ if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 && "$mode_none" -eq 0 
         # Determine changed files from Git
         if [[ -z "$base_ref" ]]; then
             if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+                git fetch origin "$GITHUB_BASE_REF" --no-tags >/dev/null 2>&1 || \
+                    git fetch origin "$GITHUB_BASE_REF" >/dev/null 2>&1 || true
                 base_ref="origin/${GITHUB_BASE_REF}"
             elif [[ -n "${GITHUB_EVENT_BEFORE:-}" && "${GITHUB_EVENT_BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
                 base_ref="${GITHUB_EVENT_BEFORE}"
@@ -174,22 +176,22 @@ if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 && "$mode_none" -eq 0 
     if [[ "$mode_all" -eq 0 ]]; then
         for file in "${changed_files[@]}"; do
             case "$file" in
-                packaging/firmware/*|vendor/radxa/firmware/*)
+                packaging/firmware/*|vendor/radxa/firmware/*|config/firmware.files)
                     select_pkg dragon-q8b-firmware
                     ;;
-                packaging/boot/*)
+                packaging/boot/*|config/cmdline.d/*)
                     select_pkg dragon-q8b-boot
                     ;;
-                packaging/overlays/*|vendor/radxa/overlays/*)
+                packaging/overlays/*|vendor/radxa/overlays/*|config/overlays.list)
                     select_pkg dragon-q8b-overlays
                     ;;
                 packaging/alsa/*|vendor/radxa/alsa/*)
                     select_pkg dragon-q8b-alsa-ucm
                     ;;
                 packaging/fastrpc/*|vendor/qualcomm/fastrpc/*)
-                    select_pkg dragon-q8b-fastrpc
+                    select_pkg fastrpc
                     ;;
-                packaging/qnn/*)
+                packaging/qnn/*|scripts/qairt-catalog.sh)
                     select_pkg dragon-q8b-qnn
                     ;;
                 packaging/kernel-meta/*)
@@ -197,6 +199,10 @@ if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 && "$mode_none" -eq 0 
                     ;;
                 packaging/meta/*)
                     select_pkg dragon-q8b-support
+                    ;;
+                config/kernel-local)
+                    select_pkg kernel
+                    select_pkg dragon-q8b-kernel
                     ;;
                 vendor/armbian/sc8280xp-edge-patches/*|vendor/radxa/kernel/*|\
                 config/armbian-sc8280xp-edge-patches.*|scripts/prepare-kernel-source.sh|\
@@ -211,7 +217,7 @@ if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 && "$mode_none" -eq 0 
                         if grep -Eq 'RADXA_FIRMWARE' <<< "$env_diff"; then select_pkg dragon-q8b-firmware; fi
                         if grep -Eq 'RADXA_OVERLAYS' <<< "$env_diff"; then select_pkg dragon-q8b-overlays; fi
                         if grep -Eq 'ALSA_UCM' <<< "$env_diff"; then select_pkg dragon-q8b-alsa-ucm; fi
-                        if grep -Eq 'FASTRPC' <<< "$env_diff"; then select_pkg dragon-q8b-fastrpc; fi
+                        if grep -Eq 'FASTRPC' <<< "$env_diff"; then select_pkg fastrpc; fi
                         if grep -Eq 'QAIRT' <<< "$env_diff"; then select_pkg dragon-q8b-qnn; fi
                         if grep -Eq 'ARMBIAN|RADXA_KERNEL|FEDORA_RELEASE' <<< "$env_diff"; then
                             select_pkg kernel

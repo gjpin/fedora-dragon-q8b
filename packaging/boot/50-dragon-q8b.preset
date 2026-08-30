@@ -1,0 +1,2 @@
+enable dragon-q8b-bt.service
+enable dragon-q8b-thermal.service

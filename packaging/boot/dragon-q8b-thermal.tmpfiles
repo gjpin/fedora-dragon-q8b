@@ -1,0 +1,4 @@
+# Restore the fanless default early at boot. dragon-q8b-thermal.service then
+# applies step_wise only on zones that list a pwm-fan cooling device
+# (Heatsink 6845B overlay).
+w /sys/class/thermal/thermal_zone*/policy - - - - power_allocator

@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the pinned Qualcomm QAIRT SDK when already licensed
+Documentation=https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/dragon-q8b-qnn/accepted-license-sha256
+
+[Service]
+Type=oneshot
+Nice=10
+TimeoutStartSec=infinity
+ExecStart=/usr/libexec/dragon-q8b-qnn-sync install

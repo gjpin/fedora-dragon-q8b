@@ -26,6 +26,7 @@ RADXA_FIRMWARE_VERSION=${RADXA_FIRMWARE_VERSION_OVERRIDE:-$RADXA_FIRMWARE_VERSIO
 RADXA_OVERLAYS_REF=${RADXA_OVERLAYS_REF_OVERRIDE:-$RADXA_OVERLAYS_REF}
 ALSA_UCM_VERSION=${ALSA_UCM_VERSION_OVERRIDE:-$ALSA_UCM_VERSION}
 FASTRPC_REF=${FASTRPC_REF_OVERRIDE:-$FASTRPC_REF}
+FASTRPC_VERSION=${FASTRPC_VERSION_OVERRIDE:-$FASTRPC_VERSION}
 QAIRT_VERSION=${QAIRT_VERSION_OVERRIDE:-$QAIRT_VERSION}
 QAIRT_DOWNLOAD_URL=${QAIRT_DOWNLOAD_URL_OVERRIDE:-$QAIRT_DOWNLOAD_URL}
 QAIRT_ARCHIVE_SHA256=${QAIRT_ARCHIVE_SHA256_OVERRIDE:-$QAIRT_ARCHIVE_SHA256}
@@ -128,7 +129,7 @@ package_dirs=(
     "boot:dragon-q8b-boot"
     "overlays:dragon-q8b-overlays"
     "alsa:dragon-q8b-alsa-ucm"
-    "fastrpc:dragon-q8b-fastrpc"
+    "fastrpc:fastrpc"
     "qnn:dragon-q8b-qnn"
     "kernel-meta:dragon-q8b-kernel"
     "meta:dragon-q8b-support"
@@ -152,29 +153,30 @@ for entry in "${package_dirs[@]}"; do
     if [[ "$package_dir" == firmware ]]; then
         sed -i "s/^%global _source_firmware_ref .*/%global _source_firmware_ref $RADXA_FIRMWARE_REF/" "$topdir/SPECS/$spec_name"
         sed -i "s/^%global _source_firmware_version .*/%global _source_firmware_version $RADXA_FIRMWARE_VERSION/" "$topdir/SPECS/$spec_name"
+        cp "$repo_root/vendor/radxa/firmware/radxa-firmware-${RADXA_FIRMWARE_REF}.tar.gz" \
+            "$topdir/SOURCES/"
+        cp "$repo_root/config/firmware.files" "$topdir/SOURCES/firmware.files"
     fi
     if [[ "$package_dir" == overlays ]]; then
         sed -i "s/^%global overlays_ref .*/%global overlays_ref $RADXA_OVERLAYS_REF/" "$topdir/SPECS/$spec_name"
-    fi
-    if [[ "$package_dir" == fastrpc ]]; then
-        sed -i "s/^%global fastrpc_ref .*/%global fastrpc_ref $FASTRPC_REF/" "$topdir/SPECS/$spec_name"
-    fi
-    if [[ "$package_dir" == firmware ]]; then
-        cp "$repo_root/vendor/radxa/firmware/radxa-firmware-${RADXA_FIRMWARE_REF}.tar.gz" \
-            "$topdir/SOURCES/"
-    fi
-    if [[ "$package_dir" == overlays ]]; then
         cp "$repo_root/vendor/radxa/overlays/radxa-overlays-${RADXA_OVERLAYS_REF}.tar.gz" \
             "$topdir/SOURCES/"
+        cp "$repo_root/config/overlays.list" "$topdir/SOURCES/overlays.list"
+    fi
+    if [[ "$package_dir" == boot ]]; then
+        cp "$repo_root/config/cmdline.d/50-dragon-q8b.conf" \
+            "$topdir/SOURCES/cmdline-50-dragon-q8b.conf"
     fi
     if [[ "$package_dir" == alsa ]]; then
-        cp "$repo_root/vendor/radxa/alsa/alsa-ucm-conf_${ALSA_UCM_VERSION}_all.deb" \
+        cp "$repo_root/vendor/radxa/alsa/alsa-ucm-conf-${ALSA_UCM_VERSION}.tar.gz" \
             "$topdir/SOURCES/"
         sed -i "s/^%global alsa_ucm_version .*/%global alsa_ucm_version $ALSA_UCM_VERSION/" \
             "$topdir/SPECS/$spec_name"
     fi
     if [[ "$package_dir" == fastrpc ]]; then
-        cp "$repo_root/vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz" \
+        sed -i "s/^%global fastrpc_version .*/%global fastrpc_version $FASTRPC_VERSION/" \
+            "$topdir/SPECS/$spec_name"
+        cp "$repo_root/vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_VERSION}.tar.gz" \
             "$topdir/SOURCES/"
     fi
     if [[ "$package_dir" == qnn ]]; then
@@ -188,10 +190,6 @@ for entry in "${package_dirs[@]}"; do
                 -e "s#^QAIRT_DSP_ARCH=.*#QAIRT_DSP_ARCH=$QAIRT_DSP_ARCH#" \
                 "$topdir/SOURCES/$qnn_source"
         done
-        sed -i \
-            -e "s#^    export QNN_TARGET=.*#    export QNN_TARGET=$QAIRT_TARGET#" \
-            -e "s#^    export QNN_DSP_ARCH=.*#    export QNN_DSP_ARCH=$QAIRT_DSP_ARCH#" \
-            "$topdir/SOURCES/dragon-q8b-qnn.sh"
         printf '/opt/qualcomm/qairt/current/lib/%s\n' "$QAIRT_TARGET" \
             > "$topdir/SOURCES/dragon-q8b-qnn-ld.so.conf"
     fi

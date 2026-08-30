@@ -18,7 +18,11 @@ source "$env_file"
 lock="$repo_root/packaging/inputs.lock"
 replace() {
     local key=$1 value=$2
-    sed -i "s#^${key}:.*#${key}: \"${value}\"#" "$lock"
+    if grep -q "^${key}:" "$lock"; then
+        sed -i "s#^${key}:.*#${key}: \"${value}\"#" "$lock"
+    else
+        printf '%s: "%s"\n' "$key" "$value" >> "$lock"
+    fi
 }
 
 replace radxa_kernel_ref "$RADXA_KERNEL_REF"
@@ -31,14 +35,15 @@ replace radxa_firmware_archive_sha256 "$RADXA_FIRMWARE_ARCHIVE_SHA256"
 replace radxa_overlays_archive "vendor/radxa/overlays/radxa-overlays-${RADXA_OVERLAYS_REF}.tar.gz"
 replace radxa_overlays_archive_sha256 "$RADXA_OVERLAYS_ARCHIVE_SHA256"
 replace alsa_ucm_version "$ALSA_UCM_VERSION"
-replace alsa_ucm_deb "vendor/radxa/alsa/$ALSA_UCM_DEB"
-replace alsa_ucm_deb_sha256 "$ALSA_UCM_DEB_SHA256"
+replace alsa_ucm_archive "vendor/radxa/alsa/${ALSA_UCM_ARCHIVE:-alsa-ucm-conf-${ALSA_UCM_VERSION}.tar.gz}"
+replace alsa_ucm_archive_sha256 "$ALSA_UCM_ARCHIVE_SHA256"
 replace armbian_ref "$ARMBIAN_REF"
 replace patch_manifest_sha256 "$PATCH_MANIFEST_SHA256"
-replace fastrpc_ref "${FASTRPC_REF:-228d98b5f143ed917789cde017a8aa548e65b80b}"
-replace fastrpc_version "${FASTRPC_VERSION:-0.0.1}"
-replace fastrpc_archive "${FASTRPC_ARCHIVE:-vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF:-228d98b5f143ed917789cde017a8aa548e65b80b}.tar.gz}"
-replace fastrpc_archive_sha256 "${FASTRPC_ARCHIVE_SHA256:-46f68c2e0cb0d5cb461e17024fb60f87a5b73ad28fd60e5450a62d7c104d96ac}"
+replace fastrpc_ref "${FASTRPC_REF}"
+replace fastrpc_tag "${FASTRPC_TAG:-v${FASTRPC_VERSION}}"
+replace fastrpc_version "${FASTRPC_VERSION}"
+replace fastrpc_archive "${FASTRPC_ARCHIVE:-vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_VERSION}.tar.gz}"
+replace fastrpc_archive_sha256 "${FASTRPC_ARCHIVE_SHA256}"
 replace qairt_version "$QAIRT_VERSION"
 replace qairt_download_url "$QAIRT_DOWNLOAD_URL"
 replace qairt_archive_sha256 "$QAIRT_ARCHIVE_SHA256"

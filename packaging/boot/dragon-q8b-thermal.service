@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply Dragon Q8B thermal governor after cooling devices bind
+DefaultDependencies=yes
+After=systemd-tmpfiles-setup.service sysinit.target
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/dragon-q8b-thermal --apply-config
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+# Overlay basenames compiled into dragon-q8b-overlays.
+# Unprefixed names come from the Radxa overlays tarball.
+# local: names are compiled from packaging/overlays/<name>.dtso.
+
+sc8280xp-i2c18
+sc8280xp-i2c20
+sc8280xp-i2c4
+sc8280xp-i2c5
+sc8280xp-i2c8
+sc8280xp-i2c9
+sc8280xp-radxa-dragon-q8b-fpc-pcie
+sc8280xp-radxa-dragon-q8b-spi18-enc28j60
+sc8280xp-radxa-dragon-q8b-spi20-enc28j60
+sc8280xp-radxa-dragon-q8b-spi4-enc28j60
+sc8280xp-radxa-dragon-q8b-spi9-enc28j60
+sc8280xp-spi18-spidev
+sc8280xp-spi20-spidev
+sc8280xp-spi4-spidev
+sc8280xp-spi9-spidev
+sc8280xp-uart18
+sc8280xp-uart20
+sc8280xp-uart4
+sc8280xp-uart6
+sc8280xp-uart9
+local:sc8280xp-radxa-dragon-q8b-pwm-fan

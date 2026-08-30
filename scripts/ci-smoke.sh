@@ -59,7 +59,7 @@ skip_lfs=${1:?missing LFS mode}
 dnf -y --disablerepo='*openh264*' install \
     bash coreutils git git-lfs findutils grep sed awk \
     fedpkg fedora-packager \
-    rpm-build rpmdevtools kernel-rpm-macros python3-devel \
+    rpm-build rpmdevtools kernel-rpm-macros systemd-rpm-macros python3-devel \
     make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck \
     autoconf automake libtool libyaml-devel libbsd-devel
 
@@ -79,22 +79,52 @@ bash -n scripts/*.sh \
     packaging/boot/dragon-q8b-bt-address \
     packaging/boot/dragon-q8b-refresh-boot \
     packaging/boot/dragon-q8b-thermal \
-    packaging/qnn/dragon-q8b-qnn-sync
+    packaging/boot/50-dragon-q8b.install \
+    packaging/boot/91-dragon-q8b.install \
+    packaging/overlays/dragon-q8b-overlay \
+    packaging/qnn/dragon-q8b-qnn-sync \
+    packaging/qnn/dragon-q8b-qnn.sh
 shellcheck scripts/*.sh \
     packaging/boot/dragon-q8b-bt-address \
     packaging/boot/dragon-q8b-refresh-boot \
     packaging/boot/dragon-q8b-thermal \
-    packaging/qnn/dragon-q8b-qnn-sync
+    packaging/boot/50-dragon-q8b.install \
+    packaging/boot/91-dragon-q8b.install \
+    packaging/overlays/dragon-q8b-overlay \
+    packaging/qnn/dragon-q8b-qnn-sync \
+    packaging/qnn/dragon-q8b-qnn.sh
 bash scripts/validate-vendor.sh
 for spec in packaging/*/*.spec; do
     rpmspec --parse "$spec" >/dev/null
 done
 
 # Test detect-affected-packages functionality
-test "$(bash scripts/detect-affected-packages.sh --packages "boot,fastrpc")" = "dragon-q8b-boot dragon-q8b-fastrpc"
+test "$(bash scripts/detect-affected-packages.sh --packages "boot,fastrpc")" = "dragon-q8b-boot fastrpc"
+test "$(bash scripts/detect-affected-packages.sh --packages dragon-q8b-fastrpc)" = "fastrpc"
 test -z "$(bash scripts/detect-affected-packages.sh --packages "none")"
 test "$(bash scripts/detect-affected-packages.sh --files packaging/boot/dragon-q8b-boot.spec)" = "dragon-q8b-boot"
 test "$(bash scripts/detect-affected-packages.sh --files vendor/armbian/sc8280xp-edge-patches/0001.patch)" = "kernel dragon-q8b-kernel"
+test "$(bash scripts/detect-affected-packages.sh --files config/firmware.files)" = "dragon-q8b-firmware"
+test "$(bash scripts/detect-affected-packages.sh --files config/kernel-local)" = "kernel dragon-q8b-kernel"
+test "$(bash scripts/detect-affected-packages.sh --files config/overlays.list)" = "dragon-q8b-overlays"
+test "$(bash scripts/detect-affected-packages.sh --files config/cmdline.d/50-dragon-q8b.conf)" = "dragon-q8b-boot"
+test "$(bash scripts/detect-affected-packages.sh --files scripts/qairt-catalog.sh)" = "dragon-q8b-qnn"
+
+qnn_pkg_conf=$(mktemp)
+qnn_local_conf=$(mktemp)
+printf 'QAIRT_VERSION=9.9.9.999999\n' > "$qnn_pkg_conf"
+test "$(QNN_PACKAGED_CONF="$qnn_pkg_conf" QNN_CONFIG_FILE=/dev/null \
+    packaging/qnn/dragon-q8b-qnn-sync status | awk -F' : ' '/Configured QAIRT version/{print $2}')" = "9.9.9.999999"
+printf 'QAIRT_VERSION=8.8.8.888888\n' > "$qnn_local_conf"
+test "$(QNN_PACKAGED_CONF="$qnn_pkg_conf" QNN_CONFIG_FILE="$qnn_local_conf" \
+    packaging/qnn/dragon-q8b-qnn-sync status | awk -F' : ' '/Configured QAIRT version/{print $2}')" = "8.8.8.888888"
+rm -f "$qnn_pkg_conf" "$qnn_local_conf"
+if packaging/qnn/dragon-q8b-qnn-sync install >/dev/null 2>&1; then
+    echo "QNN installer accepted installation without explicit license acceptance" >&2
+    exit 1
+fi
+install_err=$(packaging/qnn/dragon-q8b-qnn-sync install 2>&1 || true)
+printf '%s\n' "$install_err" | grep -Fq -- '--accept-license'
 
 smoke_rpm_topdir=$(mktemp -d)
 mkdir -p "$smoke_rpm_topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
@@ -102,20 +132,23 @@ mkdir -p "$smoke_rpm_topdir"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
 source config/dragon-q8b.env
 cp packaging/firmware/dragon-q8b-firmware.spec "$smoke_rpm_topdir/SPECS/"
 cp "vendor/radxa/firmware/radxa-firmware-${RADXA_FIRMWARE_REF}.tar.gz" "$smoke_rpm_topdir/SOURCES/"
+cp config/firmware.files "$smoke_rpm_topdir/SOURCES/"
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-firmware.spec" >/dev/null
 
 cp packaging/boot/dragon-q8b-boot.spec "$smoke_rpm_topdir/SPECS/"
-cp packaging/boot/* "$smoke_rpm_topdir/SOURCES/"
+find packaging/boot -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
+cp config/cmdline.d/50-dragon-q8b.conf "$smoke_rpm_topdir/SOURCES/cmdline-50-dragon-q8b.conf"
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-boot.spec" >/dev/null
 
 cp packaging/alsa/dragon-q8b-alsa-ucm.spec "$smoke_rpm_topdir/SPECS/"
-cp "vendor/radxa/alsa/alsa-ucm-conf_${ALSA_UCM_VERSION}_all.deb" "$smoke_rpm_topdir/SOURCES/"
+find packaging/alsa -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
+cp "vendor/radxa/alsa/alsa-ucm-conf-${ALSA_UCM_VERSION}.tar.gz" "$smoke_rpm_topdir/SOURCES/"
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-alsa-ucm.spec" >/dev/null
 
-cp packaging/fastrpc/dragon-q8b-fastrpc.spec "$smoke_rpm_topdir/SPECS/"
+cp packaging/fastrpc/fastrpc.spec "$smoke_rpm_topdir/SPECS/"
 find packaging/fastrpc -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
-cp "vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz" "$smoke_rpm_topdir/SOURCES/"
-rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-fastrpc.spec" >/dev/null
+cp "vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_VERSION}.tar.gz" "$smoke_rpm_topdir/SOURCES/"
+rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/fastrpc.spec" >/dev/null
 
 cp packaging/qnn/dragon-q8b-qnn.spec "$smoke_rpm_topdir/SPECS/"
 find packaging/qnn -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
@@ -123,22 +156,26 @@ rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/drago
 packaging/qnn/dragon-q8b-qnn-sync --help >/dev/null
 packaging/qnn/dragon-q8b-qnn-sync license | grep -Fq "$QAIRT_DOWNLOAD_URL"
 packaging/qnn/dragon-q8b-qnn-sync status | grep -Fq "Configured QAIRT version : $QAIRT_VERSION"
-if packaging/qnn/dragon-q8b-qnn-sync install >/dev/null 2>&1; then
-    echo "QNN installer accepted installation without explicit license acceptance" >&2
+qnn_rpm=$(find "$smoke_rpm_topdir/RPMS" -name 'dragon-q8b-qnn-*.rpm' | head -n 1)
+rpm -qpl "$qnn_rpm" | grep -Fxq '/usr/lib/dragon-q8b/qnn.conf'
+rpm -qpc "$qnn_rpm" | grep -Fq '/etc/dragon-q8b/qnn.conf'
+if rpm -qpc "$qnn_rpm" | grep -Fq '/usr/lib/dragon-q8b/qnn.conf'; then
+    echo "packaged QAIRT pin must not be %config" >&2
     exit 1
 fi
 
 cp packaging/meta/dragon-q8b-support.spec "$smoke_rpm_topdir/SPECS/"
+find packaging/meta -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-support.spec" >/dev/null
 
 rm -rf "$smoke_rpm_topdir"
 
 # Test selective build-srpms
 smoke_srpm_dir=$(mktemp -d)
-bash scripts/build-srpms.sh --packages "dragon-q8b-boot dragon-q8b-fastrpc" --output "$smoke_srpm_dir"
+bash scripts/build-srpms.sh --packages "dragon-q8b-boot fastrpc" --output "$smoke_srpm_dir"
 bash scripts/validate-srpms.sh "$smoke_srpm_dir"
 test -f "$smoke_srpm_dir"/dragon-q8b-boot-*.src.rpm
-test -f "$smoke_srpm_dir"/dragon-q8b-fastrpc-*.src.rpm
+test -f "$smoke_srpm_dir"/fastrpc-*.src.rpm
 test ! -f "$smoke_srpm_dir"/dragon-q8b-firmware-*.src.rpm
 rm -rf "$smoke_srpm_dir"
 

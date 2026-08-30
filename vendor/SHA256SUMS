@@ -1,4 +1,4 @@
-e1e883b2cb003a26cf609f9a4b32109add94694a34a5036eac61e2ef12e8eb78  vendor/README.md
+1d1790b828c4b020a93b6abec7264fa2c577f4df73728d7f270cc68c2dc0e35e  vendor/README.md
 7c1d63de1cc61f7f7b2cd3a46ff429de52d27d1d99630cc37a56c3eab4cd8e69  vendor/armbian/sc8280xp-edge-patches/0001-arm64-dts-sc8280xp-fix-dwc3-reg-size.patch
 a1761d7a671771c057bd50e813a6eb4d33f4ed79911dbbb2753a82b6df64d0f1  vendor/armbian/sc8280xp-edge-patches/0002-arm64-dts-sc8280xp-fix-gpi-dma0-channels.patch
 bfb5cf80afff4c22839351e40250227f88bd8523e6ae27edad72d55a8ed053e3  vendor/armbian/sc8280xp-edge-patches/0003-arm64-dts-sc8280xp-add-qup-pinctrl-states.patch
@@ -33,8 +33,8 @@ cc96d5afb99849f719cd057fd3a91960f4ce9cb0a8c7399d9f74b79a18491994  vendor/armbian
 e00c1878dd253fdb705bd4c38b37e489a3c67f23a0c514089df750114fdd83d1  vendor/armbian/sc8280xp-edge-patches/0033-net-stmmac-tc956x-shutdown-callback.patch
 2addd55d9e1cd3f0c83b214d2b86d1320dc95144a106a67d039b43b142758f50  vendor/armbian/sc8280xp-edge-patches/0034-net-phy-qca808x-dt-led-preset-modes.patch
 3c814387d2cdedbbd64966311d9b74e8323e2c06c53ee8a765ad1fc871f471e9  vendor/armbian/sc8280xp-edge-patches/0035-soundwire-qcom-only-reject-over-declared-port-counts.patch
-46f68c2e0cb0d5cb461e17024fb60f87a5b73ad28fd60e5450a62d7c104d96ac  vendor/qualcomm/fastrpc/fastrpc-228d98b5f143ed917789cde017a8aa548e65b80b.tar.gz
-e98278426a43fac2b99f72d299032c2904b62886c3a6fb1f745f5ad0c3bc62e8  vendor/radxa/alsa/alsa-ucm-conf_1.2.16.1-radxa-1_all.deb
+4e3fdce8b8ed715579f51778b19d88617f508d0c4f431bd190fde217d6ba4947  vendor/qualcomm/fastrpc/fastrpc-1.0.6.tar.gz
+68f7ac7d334e9e7e879f8664d3deecea8f07403a93a2f43a0632580b8d0309da  vendor/radxa/alsa/alsa-ucm-conf-1.2.16.1-radxa-1.tar.gz
 6d0ba1526fe090ee45c49731bebd64504aa51d39900e2f3cad4ca49963051bc3  vendor/radxa/firmware/radxa-firmware-e1761009df008adfd62c77f2c5584e3067449013.tar.gz
-b8c5ad084f842aa57a4da0206e6221d7bba33aa04e5c5b9459c452baecac88d2  vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts
+61f052f6597f194909634b3a6ccf611bc960b85e6e6d0ef42d165eb016d38566  vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts
 988e6c93fb6ee07266ff82a644cb688e958b17a5a75fd0070897feddde93a939  vendor/radxa/overlays/radxa-overlays-be64705364a8f131da018e322e04f3232e56d9a9.tar.gz

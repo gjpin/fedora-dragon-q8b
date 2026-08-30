@@ -1,0 +1,38 @@
+/*
+ * SPDX-License-Identifier: GPL-2.0-or-later OR BSD-3-Clause
+ *
+ * Optional overlay for the official Radxa Heatsink 6845B PWM fan.
+ *
+ * Enable with: dragon-q8b-overlay enable pwm-fan
+ * then reboot so kernel-install can merge this overlay into the Q8B DTB.
+ *
+ * FIXME: The Q8B board DTS has no pwm/fan node. The PWM phandle and pinmux
+ * for the dedicated fan connector could not be confirmed from the Radxa
+ * schematic, vendor DTS, or kernel sources. Do not invent a pin. Fill in
+ * `pwms` (and any required pinctrl) from hardware documentation before
+ * expecting a pwm-fan cooling device to bind.
+ *
+ * SC8280XP PWM on this SoC is typically the PM8350C LPG (`pmc8280c_lpg` in
+ * sc8280xp-pmics.dtsi), but the fan-header channel/pin is unverified.
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "radxa,dragon-q8b";
+
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			/* Bound name is type "pwm-fan" once pwms is valid and status=okay. */
+			fan0: pwm-fan {
+				compatible = "pwm-fan";
+				#cooling-cells = <2>;
+				cooling-levels = <0 64 128 192 255>;
+				status = "disabled";
+				/* FIXME: pwms = <&confirmed_pwm_phandle channel period_ns>; */
+			};
+		};
+	};
+};

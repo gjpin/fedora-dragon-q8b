@@ -3,22 +3,30 @@ set -Eeuo pipefail
 
 QNN_BASE_DIR=${QNN_BASE_DIR:-/opt/qualcomm/qairt}
 QNN_STATE_DIR=${QNN_STATE_DIR:-/var/lib/dragon-q8b-qnn}
+QNN_PACKAGED_CONF=${QNN_PACKAGED_CONF:-/usr/lib/dragon-q8b/qnn.conf}
 QNN_CONFIG_FILE=${QNN_CONFIG_FILE:-/etc/dragon-q8b/qnn.conf}
 QNN_CURRENT_LINK="$QNN_BASE_DIR/current"
 qnn_work_dir=
 qnn_install_tmp=
 
-QAIRT_VERSION=2.42.0.251225
-QAIRT_DOWNLOAD_URL=https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.42.0.251225/v2.42.0.251225.zip
-QAIRT_ARCHIVE_SHA256=1a744ed72a813fc9dd4a29e31b1685f784786102fd45414d74915bb3351ae321
+# Fallbacks used when running from git without the packaged conf. RPM builds
+# replace these from config/dragon-q8b.env.
+QAIRT_VERSION=2.49.40.260810
+QAIRT_DOWNLOAD_URL=https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.49.40.260810/v2.49.40.260810.zip
+QAIRT_ARCHIVE_SHA256=8b1e00d03806b026c41dbc51aec40d6b6c684fff34806409dc2283d00926629a
 QAIRT_LICENSE_SHA256=ec1dccfdcba5c6e64126e84199b8362bf4999107bfa567ebe831dbb4c461692b
 QAIRT_TARGET=aarch64-oe-linux-gcc11.2
 QAIRT_DSP_ARCH=68
 
-if [[ -r "$QNN_CONFIG_FILE" ]]; then
+load_qnn_conf() {
+    local file=$1
+    [[ -r "$file" ]] || return 0
     # shellcheck disable=SC1090
-    source "$QNN_CONFIG_FILE"
-fi
+    source "$file"
+}
+
+load_qnn_conf "$QNN_PACKAGED_CONF"
+load_qnn_conf "$QNN_CONFIG_FILE"
 
 usage() {
     cat <<'EOF'
@@ -38,6 +46,9 @@ Install options:
   --archive FILE            Use an already-downloaded official QAIRT archive
   --accept-license          Accept the Qualcomm AI Stack license bundled in it
   -h, --help                Show this help text
+
+After the first --accept-license, later RPM pin updates install silently when
+the bundled LICENSE.pdf hash is unchanged.
 EOF
 }
 
@@ -66,6 +77,18 @@ runtime_complete() {
     release_complete "$QNN_CURRENT_LINK"
 }
 
+installed_version() {
+    if [[ -r "$QNN_STATE_DIR/installed-version" ]]; then
+        cat "$QNN_STATE_DIR/installed-version"
+    fi
+}
+
+accepted_license_hash() {
+    if [[ -r "$QNN_STATE_DIR/accepted-license-sha256" ]]; then
+        cat "$QNN_STATE_DIR/accepted-license-sha256"
+    fi
+}
+
 show_license() {
     cat <<EOF
 Qualcomm AI Runtime Community Edition $QAIRT_VERSION is governed by the
@@ -78,6 +101,8 @@ directly from Qualcomm when you explicitly pass --accept-license.
 
 Product page:
   https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk
+Catalog:
+  https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community
 Official archive:
   $QAIRT_DOWNLOAD_URL
 EOF
@@ -90,9 +115,7 @@ show_status() {
     if [[ -L "$QNN_CURRENT_LINK" ]] && runtime_complete; then
         printf 'Installed                : yes\n'
         printf 'Active SDK               : %s\n' "$(readlink -f "$QNN_CURRENT_LINK")"
-        if [[ -r "$QNN_STATE_DIR/installed-version" ]]; then
-            printf 'Installed version        : %s\n' "$(<"$QNN_STATE_DIR/installed-version")"
-        fi
+        printf 'Installed version        : %s\n' "$(installed_version)"
     else
         printf 'Installed                : no\n'
         printf 'Install command           : sudo dragon-q8b-qnn install --accept-license\n'
@@ -107,35 +130,55 @@ check_board() {
     fi
 }
 
+archive_license_hash() {
+    unzip -p "$1" "qairt/$QAIRT_VERSION/LICENSE.pdf" | sha256sum | awk '{print $1}'
+}
+
 verify_archive() {
     local archive=$1 actual license_hash
     actual=$(sha256sum "$archive" | awk '{print $1}')
     [[ "$actual" == "$QAIRT_ARCHIVE_SHA256" ]] ||
         die "archive checksum mismatch: $actual != $QAIRT_ARCHIVE_SHA256"
     unzip -tq "$archive" >/dev/null || die "QAIRT archive is corrupt"
-    license_hash=$(unzip -p "$archive" "qairt/$QAIRT_VERSION/LICENSE.pdf" | sha256sum | awk '{print $1}')
+    license_hash=$(archive_license_hash "$archive")
     [[ "$license_hash" == "$QAIRT_LICENSE_SHA256" ]] ||
         die "QAIRT license checksum mismatch"
 }
 
+write_ld_so_conf() {
+    local dest=/etc/ld.so.conf.d/dragon-q8b-qnn.conf
+    install -d -m0755 "$(dirname "$dest")"
+    printf '/opt/qualcomm/qairt/current/lib/%s\n' "$QAIRT_TARGET" > "$dest"
+}
+
 activate_release() {
-    local version=$1 link_tmp="$QNN_BASE_DIR/.current.$$"
+    local version=$1 license_hash=$2 link_tmp="$QNN_BASE_DIR/.current.$$"
     ln -sfn "releases/$version" "$link_tmp"
     mv -Tf "$link_tmp" "$QNN_CURRENT_LINK"
     install -d -m0755 "$QNN_STATE_DIR"
     printf '%s\n' "$version" > "$QNN_STATE_DIR/installed-version"
-    printf '%s\n' "$QAIRT_LICENSE_SHA256" > "$QNN_STATE_DIR/accepted-license-sha256"
+    printf '%s\n' "$license_hash" > "$QNN_STATE_DIR/accepted-license-sha256"
+    write_ld_so_conf
     command -v ldconfig >/dev/null 2>&1 && ldconfig
 }
 
 install_runtime() {
-    local archive=$1 accept_license=$2 source_dir target_dir
-    [[ $EUID -eq 0 ]] || die "installation requires root privileges"
-    [[ "$accept_license" == 1 ]] || {
+    local archive=$1 accept_license=$2 source_dir target_dir license_hash stored
+    stored=$(accepted_license_hash)
+    if [[ "$accept_license" != 1 && -z "$stored" ]]; then
         show_license >&2
         die "pass --accept-license to acknowledge the Qualcomm AI Stack license"
-    }
+    fi
+    [[ $EUID -eq 0 ]] || die "installation requires root privileges"
     check_board
+
+    target_dir="$QNN_BASE_DIR/releases/$QAIRT_VERSION"
+    if [[ -d "$target_dir" ]] && release_complete "$target_dir" && \
+            [[ "$(installed_version)" == "$QAIRT_VERSION" ]]; then
+        activate_release "$QAIRT_VERSION" "${stored:-$QAIRT_LICENSE_SHA256}"
+        echo "QAIRT $QAIRT_VERSION is already installed and verified"
+        return
+    fi
 
     qnn_work_dir=$(mktemp -d /var/tmp/dragon-q8b-qairt.XXXXXX)
     if [[ -z "$archive" ]]; then
@@ -150,11 +193,16 @@ install_runtime() {
 
     echo "Verifying official QAIRT archive and bundled license"
     verify_archive "$archive"
+    license_hash=$(archive_license_hash "$archive")
+    if [[ "$accept_license" != 1 && "$stored" != "$license_hash" ]]; then
+        show_license >&2
+        die "Qualcomm AI Stack license text changed; pass --accept-license again"
+    fi
+
     install -d -m0755 "$QNN_BASE_DIR/releases"
-    target_dir="$QNN_BASE_DIR/releases/$QAIRT_VERSION"
     if [[ -d "$target_dir" ]]; then
         release_complete "$target_dir" || die "existing QAIRT installation is incomplete: $target_dir"
-        activate_release "$QAIRT_VERSION"
+        activate_release "$QAIRT_VERSION" "$license_hash"
         echo "QAIRT $QAIRT_VERSION is already installed and verified"
         return
     fi
@@ -173,7 +221,7 @@ install_runtime() {
     mv "$source_dir" "$target_dir"
     rmdir "$qnn_install_tmp/qairt" "$qnn_install_tmp"
     qnn_install_tmp=
-    activate_release "$QAIRT_VERSION"
+    activate_release "$QAIRT_VERSION" "$license_hash"
     echo "Installed QAIRT $QAIRT_VERSION from Qualcomm Software Center"
     echo "Run 'dragon-q8b-qnn verify' on the Dragon Q8B to validate NPU access"
 }
