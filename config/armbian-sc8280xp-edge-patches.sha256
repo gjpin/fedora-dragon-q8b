@@ -2,7 +2,6 @@
 a1761d7a671771c057bd50e813a6eb4d33f4ed79911dbbb2753a82b6df64d0f1  0002-arm64-dts-sc8280xp-fix-gpi-dma0-channels.patch
 bfb5cf80afff4c22839351e40250227f88bd8523e6ae27edad72d55a8ed053e3  0003-arm64-dts-sc8280xp-add-qup-pinctrl-states.patch
 f38f4e1cb827dd9618d75831a8acc363b12531703a9da46879b370fe4ae9c599  0004-arm64-dts-sc8280xp-add-iris-video-codec.patch
-0dcfb460ba76cc9ae21025629e276e37e7c2d3d60395d9cb59247e811d9b9ae8  0005-arm64-dts-sc8280xp-add-radxa-dragon-q8b.patch
 f7b000bf39497a10c66ae6b8593a12092d9d5cf089e250ed74e06dd42ca83bdd  0006-soc-qcom-pmic_glink-suppress-battery-via-dt.patch
 64a7bc1908f9aedb962e7457dac51e06d5ef49c5df352f2b3d4db0bfc9d1a51b  0007-pci-of-skip-config-reads-to-disabled-bridges.patch
 8efb18048ed6cc204a7a82598c53e9e3960e9abd8c7f498f84085b4537b8d0d6  0008-pci-qcom-enable-sc8280xp-qps615-switch.patch

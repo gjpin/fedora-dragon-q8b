@@ -2,7 +2,6 @@
 0002-arm64-dts-sc8280xp-fix-gpi-dma0-channels.patch
 0003-arm64-dts-sc8280xp-add-qup-pinctrl-states.patch
 0004-arm64-dts-sc8280xp-add-iris-video-codec.patch
-0005-arm64-dts-sc8280xp-add-radxa-dragon-q8b.patch
 0006-soc-qcom-pmic_glink-suppress-battery-via-dt.patch
 0007-pci-of-skip-config-reads-to-disabled-bridges.patch
 0008-pci-qcom-enable-sc8280xp-qps615-switch.patch

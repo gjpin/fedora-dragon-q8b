@@ -7,7 +7,7 @@ Usage: validate-e2e.sh [options]
 
 Validate Radxa Dragon Q8B Fedora system installation and hardware integration.
 Runs comprehensive checks for packages, firmware, kernel DTB, overlays, boot
-configuration, dracut initramfs, Bluetooth service, FastRPC runtime, QNN sync,
+configuration, dracut initramfs, Bluetooth service, FastRPC runtime, QNN/QAIRT,
 and ALSA UCM configuration.
 
 Options:
@@ -454,21 +454,21 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Section 9: QNN Runtime & Sync Service
+# Section 9: QNN / QAIRT installer and runtime
 # -----------------------------------------------------------------------------
 echo
-echo "--- Section 9: QNN Runtime & Sync Service ---"
+echo "--- Section 9: QNN / QAIRT Integration ---"
 
 qnn_sync="/usr/libexec/dragon-q8b-qnn-sync"
 if [[ -x "$qnn_sync" ]]; then
-    log_ok "QNN synchronization helper $qnn_sync is executable"
+    log_ok "QNN installer and validator $qnn_sync is executable"
     if "$qnn_sync" --help >/dev/null 2>&1; then
-        log_ok "QNN synchronization helper responds to --help"
+        log_ok "QNN helper responds to --help"
     else
-        log_fail "QNN sync helper --help"
+        log_fail "QNN helper --help"
     fi
 else
-    log_fail "QNN sync helper executable" "missing $qnn_sync"
+    log_fail "QNN helper executable" "missing $qnn_sync"
 fi
 
 if [[ -L /usr/bin/dragon-q8b-qnn || -x /usr/bin/dragon-q8b-qnn ]]; then
@@ -477,18 +477,27 @@ else
     log_fail "QNN CLI command present" "missing /usr/bin/dragon-q8b-qnn"
 fi
 
-qnn_service="/usr/lib/systemd/system/dragon-q8b-qnn.service"
-qnn_timer="/usr/lib/systemd/system/dragon-q8b-qnn.timer"
-if [[ -f "$qnn_service" && -f "$qnn_timer" ]]; then
-    log_ok "QNN systemd service and timer units exist"
+qnn_config=/etc/dragon-q8b/qnn.conf
+if [[ -f "$qnn_config" ]] && grep -Eq '^QAIRT_ARCHIVE_SHA256=[[:xdigit:]]{64}$' "$qnn_config"; then
+    log_ok "QNN configuration pins the official QAIRT archive checksum"
 else
-    log_fail "QNN systemd units exist" "missing $qnn_service or $qnn_timer"
+    log_fail "QNN pinned QAIRT configuration" "missing or invalid $qnn_config"
 fi
 
 if [[ -f /etc/profile.d/dragon-q8b-qnn.sh && -f /etc/ld.so.conf.d/dragon-q8b-qnn.conf ]]; then
     log_ok "QNN environment and ld.so configuration files exist"
 else
     log_fail "QNN environment/ld.so configuration" "missing profile or ld.so.conf.d files"
+fi
+
+if [[ -x "$qnn_sync" ]]; then
+    run_check "QNN status command" "$qnn_sync" status
+    run_check "QNN license/source disclosure" "$qnn_sync" license
+    if [[ $allow_virtual -eq 0 && -L /opt/qualcomm/qairt/current ]]; then
+        run_check "QAIRT runtime and Dragon Q8B NPU validation" "$qnn_sync" verify
+    else
+        log_skip "QAIRT hardware runtime validation" "requires an installed SDK on physical Dragon Q8B hardware"
+    fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -527,7 +536,6 @@ echo "--- Section 11: Systemd Unit Enablement ---"
 if command -v systemctl >/dev/null 2>&1; then
     units_to_check=(
         "dragon-q8b-bt.service"
-        "dragon-q8b-qnn.timer"
     )
     for u in "${units_to_check[@]}"; do
         if systemctl list-unit-files "$u" >/dev/null 2>&1; then

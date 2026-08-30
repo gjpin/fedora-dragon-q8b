@@ -1,159 +1,216 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-QNN_BASE_DIR="/opt/qualcomm/qnn"
+QNN_BASE_DIR=${QNN_BASE_DIR:-/opt/qualcomm/qairt}
+QNN_STATE_DIR=${QNN_STATE_DIR:-/var/lib/dragon-q8b-qnn}
+QNN_CONFIG_FILE=${QNN_CONFIG_FILE:-/etc/dragon-q8b/qnn.conf}
 QNN_CURRENT_LINK="$QNN_BASE_DIR/current"
-QNN_CONFIG_FILE="/etc/dragon-q8b/qnn.conf"
-QNN_VERSION_FILE="$QNN_BASE_DIR/installed-version"
-DEFAULT_RELEASE_API="https://api.github.com/repos/qualcomm/qnn/releases/latest"
+qnn_work_dir=
+qnn_install_tmp=
+
+QAIRT_VERSION=2.42.0.251225
+QAIRT_DOWNLOAD_URL=https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.42.0.251225/v2.42.0.251225.zip
+QAIRT_ARCHIVE_SHA256=1a744ed72a813fc9dd4a29e31b1685f784786102fd45414d74915bb3351ae321
+QAIRT_LICENSE_SHA256=ec1dccfdcba5c6e64126e84199b8362bf4999107bfa567ebe831dbb4c461692b
+QAIRT_TARGET=aarch64-oe-linux-gcc11.2
+QAIRT_DSP_ARCH=68
+
+if [[ -r "$QNN_CONFIG_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$QNN_CONFIG_FILE"
+fi
 
 usage() {
     cat <<'EOF'
-Usage: dragon-q8b-qnn-sync [options]
+Usage: dragon-q8b-qnn COMMAND [OPTIONS]
 
-Manage and synchronize Qualcomm QNN SDK and AI runtimes for Radxa Dragon Q8B.
+Install and validate the official Qualcomm AI Runtime (QAIRT/QNN) Community
+Edition for the Radxa Dragon Q8B. The SDK is downloaded directly from
+Qualcomm and is not distributed by this RPM.
 
-Options:
-  -c, --check       Check for available QNN SDK updates without applying
-  -u, --update      Check for and install updates if available
-  -s, --status      Show currently installed and latest available version
-  --sync-onnx       Install or upgrade onnxruntime-qnn in global/user Python
-  -q, --quiet       Suppress non-error output (useful for systemd cron/timer)
-  -h, --help        Show this help message
+Commands:
+  status                    Show the configured and installed QAIRT versions
+  install --accept-license  Download, verify, and install the pinned QAIRT SDK
+  verify                    Run file, FastRPC, and QNN platform validation
+  license                   Show the license acceptance and source information
+
+Install options:
+  --archive FILE            Use an already-downloaded official QAIRT archive
+  --accept-license          Accept the Qualcomm AI Stack license bundled in it
+  -h, --help                Show this help text
 EOF
 }
 
-quiet=0
-action="status"
+die() { echo "dragon-q8b-qnn: $*" >&2; exit 1; }
 
+cleanup() {
+    case "$qnn_work_dir" in
+        /var/tmp/dragon-q8b-qairt.*) rm -rf -- "$qnn_work_dir" ;;
+    esac
+    case "$qnn_install_tmp" in
+        "$QNN_BASE_DIR"/.install.*) rm -rf -- "$qnn_install_tmp" ;;
+    esac
+}
+trap cleanup EXIT
+
+release_complete() {
+    local root=$1
+    [[ -x "$root/bin/$QAIRT_TARGET/qnn-platform-validator" ]] &&
+        [[ -r "$root/lib/$QAIRT_TARGET/libQnnHtp.so" ]] &&
+        [[ -r "$root/lib/$QAIRT_TARGET/libQnnHtpV${QAIRT_DSP_ARCH}Stub.so" ]] &&
+        [[ -r "$root/lib/hexagon-v${QAIRT_DSP_ARCH}/unsigned/libQnnHtpV${QAIRT_DSP_ARCH}Skel.so" ]] &&
+        [[ -r "$root/LICENSE.pdf" ]]
+}
+
+runtime_complete() {
+    release_complete "$QNN_CURRENT_LINK"
+}
+
+show_license() {
+    cat <<EOF
+Qualcomm AI Runtime Community Edition $QAIRT_VERSION is governed by the
+Qualcomm AI Stack license included as LICENSE.pdf in the official archive.
+
+The license permits development and application-incorporated object-code
+distribution, but prohibits standalone redistribution of the SDK. This RPM
+therefore installs only an open-source integration helper. The SDK is fetched
+directly from Qualcomm when you explicitly pass --accept-license.
+
+Product page:
+  https://www.qualcomm.com/developer/software/qualcomm-ai-engine-direct-sdk
+Official archive:
+  $QAIRT_DOWNLOAD_URL
+EOF
+}
+
+show_status() {
+    printf 'Configured QAIRT version : %s\n' "$QAIRT_VERSION"
+    printf 'Target ABI               : %s\n' "$QAIRT_TARGET"
+    printf 'SC8280XP HTP architecture: v%s\n' "$QAIRT_DSP_ARCH"
+    if [[ -L "$QNN_CURRENT_LINK" ]] && runtime_complete; then
+        printf 'Installed                : yes\n'
+        printf 'Active SDK               : %s\n' "$(readlink -f "$QNN_CURRENT_LINK")"
+        if [[ -r "$QNN_STATE_DIR/installed-version" ]]; then
+            printf 'Installed version        : %s\n' "$(<"$QNN_STATE_DIR/installed-version")"
+        fi
+    else
+        printf 'Installed                : no\n'
+        printf 'Install command           : sudo dragon-q8b-qnn install --accept-license\n'
+    fi
+}
+
+check_board() {
+    [[ "$(uname -m)" == aarch64 ]] || die "QAIRT target runtime requires aarch64"
+    if [[ "${QNN_SKIP_BOARD_CHECK:-0}" != 1 && -r /proc/device-tree/compatible ]]; then
+        tr '\0' '\n' < /proc/device-tree/compatible | grep -Fxq 'radxa,dragon-q8b' ||
+            die "this installer supports only the Radxa Dragon Q8B"
+    fi
+}
+
+verify_archive() {
+    local archive=$1 actual license_hash
+    actual=$(sha256sum "$archive" | awk '{print $1}')
+    [[ "$actual" == "$QAIRT_ARCHIVE_SHA256" ]] ||
+        die "archive checksum mismatch: $actual != $QAIRT_ARCHIVE_SHA256"
+    unzip -tq "$archive" >/dev/null || die "QAIRT archive is corrupt"
+    license_hash=$(unzip -p "$archive" "qairt/$QAIRT_VERSION/LICENSE.pdf" | sha256sum | awk '{print $1}')
+    [[ "$license_hash" == "$QAIRT_LICENSE_SHA256" ]] ||
+        die "QAIRT license checksum mismatch"
+}
+
+activate_release() {
+    local version=$1 link_tmp="$QNN_BASE_DIR/.current.$$"
+    ln -sfn "releases/$version" "$link_tmp"
+    mv -Tf "$link_tmp" "$QNN_CURRENT_LINK"
+    install -d -m0755 "$QNN_STATE_DIR"
+    printf '%s\n' "$version" > "$QNN_STATE_DIR/installed-version"
+    printf '%s\n' "$QAIRT_LICENSE_SHA256" > "$QNN_STATE_DIR/accepted-license-sha256"
+    command -v ldconfig >/dev/null 2>&1 && ldconfig
+}
+
+install_runtime() {
+    local archive=$1 accept_license=$2 source_dir target_dir
+    [[ $EUID -eq 0 ]] || die "installation requires root privileges"
+    [[ "$accept_license" == 1 ]] || {
+        show_license >&2
+        die "pass --accept-license to acknowledge the Qualcomm AI Stack license"
+    }
+    check_board
+
+    qnn_work_dir=$(mktemp -d /var/tmp/dragon-q8b-qairt.XXXXXX)
+    if [[ -z "$archive" ]]; then
+        archive="$qnn_work_dir/v${QAIRT_VERSION}.zip"
+        echo "Downloading QAIRT $QAIRT_VERSION from Qualcomm Software Center"
+        curl --fail --location --retry 4 --retry-all-errors \
+            --proto '=https' --tlsv1.2 "$QAIRT_DOWNLOAD_URL" --output "$archive"
+    else
+        [[ -r "$archive" ]] || die "archive is not readable: $archive"
+        archive=$(cd "$(dirname "$archive")" && pwd)/$(basename "$archive")
+    fi
+
+    echo "Verifying official QAIRT archive and bundled license"
+    verify_archive "$archive"
+    install -d -m0755 "$QNN_BASE_DIR/releases"
+    target_dir="$QNN_BASE_DIR/releases/$QAIRT_VERSION"
+    if [[ -d "$target_dir" ]]; then
+        release_complete "$target_dir" || die "existing QAIRT installation is incomplete: $target_dir"
+        activate_release "$QAIRT_VERSION"
+        echo "QAIRT $QAIRT_VERSION is already installed and verified"
+        return
+    fi
+
+    qnn_install_tmp=$(mktemp -d "$QNN_BASE_DIR/.install.XXXXXX")
+    unzip -q "$archive" "qairt/$QAIRT_VERSION/*" -d "$qnn_install_tmp"
+    source_dir="$qnn_install_tmp/qairt/$QAIRT_VERSION"
+    for required in \
+        "bin/$QAIRT_TARGET/qnn-platform-validator" \
+        "lib/$QAIRT_TARGET/libQnnHtp.so" \
+        "lib/$QAIRT_TARGET/libQnnHtpV${QAIRT_DSP_ARCH}Stub.so" \
+        "lib/hexagon-v${QAIRT_DSP_ARCH}/unsigned/libQnnHtpV${QAIRT_DSP_ARCH}Skel.so" \
+        LICENSE.pdf; do
+        [[ -r "$source_dir/$required" ]] || die "official archive lacks $required"
+    done
+    mv "$source_dir" "$target_dir"
+    rmdir "$qnn_install_tmp/qairt" "$qnn_install_tmp"
+    qnn_install_tmp=
+    activate_release "$QAIRT_VERSION"
+    echo "Installed QAIRT $QAIRT_VERSION from Qualcomm Software Center"
+    echo "Run 'dragon-q8b-qnn verify' on the Dragon Q8B to validate NPU access"
+}
+
+verify_runtime() {
+    check_board
+    runtime_complete || die "QAIRT is not installed or is incomplete"
+    compgen -G '/dev/fastrpc-cdsp*' >/dev/null || die "FastRPC CDSP device nodes are missing"
+    ldconfig -p 2>/dev/null | grep -F libcdsprpc.so >/dev/null || \
+        die "libcdsprpc.so is not registered"
+
+    export QNN_SDK_ROOT="$QNN_CURRENT_LINK"
+    export QAIRT_SDK_ROOT="$QNN_CURRENT_LINK"
+    export LD_LIBRARY_PATH="$QNN_CURRENT_LINK/lib/$QAIRT_TARGET${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export ADSP_LIBRARY_PATH="$QNN_CURRENT_LINK/lib/hexagon-v${QAIRT_DSP_ARCH}/unsigned;/usr/share/qcom/sc8280xp/radxa/dragon-q8b/dsp/cdsp;/usr/lib/rfsa/adsp;/dsp"
+    "$QNN_CURRENT_LINK/bin/$QAIRT_TARGET/qnn-platform-validator" \
+        --backend dsp --coreVersion --testBackend
+}
+
+command=${1:-status}
+[[ $# -eq 0 ]] || shift
+archive=
+accept_license=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -c|--check) action="check"; shift ;;
-        -u|--update) action="update"; shift ;;
-        -s|--status) action="status"; shift ;;
-        --sync-onnx) action="sync-onnx"; shift ;;
-        -q|--quiet) quiet=1; shift ;;
+        --archive) archive=${2:?missing archive path}; shift 2 ;;
+        --accept-license) accept_license=1; shift ;;
         -h|--help) usage; exit 0 ;;
-        *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        *) die "unknown option: $1" ;;
     esac
 done
 
-log() {
-    if [[ $quiet -eq 0 ]]; then
-        printf '[dragon-q8b-qnn] %s\n' "$*"
-    fi
-}
-
-get_installed_version() {
-    if [[ -f "$QNN_VERSION_FILE" ]]; then
-        cat "$QNN_VERSION_FILE"
-    else
-        echo "none"
-    fi
-}
-
-get_latest_version() {
-    # If a custom URL or channel is configured, source it
-    local api_url="$DEFAULT_RELEASE_API"
-    if [[ -r "$QNN_CONFIG_FILE" ]]; then
-        # shellcheck disable=SC1090
-        source "$QNN_CONFIG_FILE"
-        api_url="${QNN_RELEASE_API:-$DEFAULT_RELEASE_API}"
-    fi
-
-    if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-        local tag
-        tag=$(curl -fsSL --connect-timeout 10 "$api_url" 2>/dev/null | jq -r '.tag_name // empty' || true)
-        if [[ -n "$tag" ]]; then
-            echo "$tag"
-            return 0
-        fi
-    fi
-    echo "unknown"
-}
-
-do_status() {
-    local installed latest
-    installed=$(get_installed_version)
-    latest=$(get_latest_version)
-    printf 'QNN SDK Runtime Status:\n'
-    printf '  Installed Version : %s\n' "$installed"
-    printf '  Latest Available  : %s\n' "$latest"
-    printf '  Installation Path : %s\n' "$QNN_CURRENT_LINK"
-    if [[ -L "$QNN_CURRENT_LINK" ]]; then
-        printf '  Active Target     : %s\n' "$(readlink -f "$QNN_CURRENT_LINK")"
-    fi
-}
-
-do_check() {
-    local installed latest
-    installed=$(get_installed_version)
-    latest=$(get_latest_version)
-    if [[ "$latest" == "unknown" ]]; then
-        log "Unable to reach release repository to check for updates."
-        exit 0
-    fi
-    if [[ "$installed" != "$latest" ]]; then
-        log "Update available: $installed -> $latest"
-        exit 10
-    else
-        log "QNN SDK is up to date ($installed)."
-        exit 0
-    fi
-}
-
-do_update() {
-    if [[ $EUID -ne 0 ]]; then
-        echo "Error: root privileges required to install or update QNN SDK." >&2
-        exit 1
-    fi
-
-    local installed latest
-    installed=$(get_installed_version)
-    latest=$(get_latest_version)
-
-    if [[ "$latest" == "unknown" ]]; then
-        log "Release channel unavailable. Skipping update check."
-        exit 0
-    fi
-
-    if [[ "$installed" == "$latest" && "$installed" != "none" ]]; then
-        log "QNN SDK is already at the latest version ($installed)."
-        exit 0
-    fi
-
-    log "Synchronizing QNN SDK: $installed -> $latest"
-    mkdir -p "$QNN_BASE_DIR/releases"
-
-    local target_dir="$QNN_BASE_DIR/releases/$latest"
-    mkdir -p "$target_dir"
-
-    # Create / update the current symlink atomically
-    ln -sfn "releases/$latest" "$QNN_CURRENT_LINK.tmp"
-    mv -Tf "$QNN_CURRENT_LINK.tmp" "$QNN_CURRENT_LINK"
-    echo "$latest" > "$QNN_VERSION_FILE"
-
-    if command -v ldconfig >/dev/null 2>&1; then
-        ldconfig
-    fi
-
-    log "QNN SDK updated to $latest successfully."
-}
-
-do_sync_onnx() {
-    log "Checking onnxruntime-qnn package..."
-    if command -v pip3 >/dev/null 2>&1; then
-        pip3 install --upgrade onnxruntime-qnn || pip3 install --upgrade onnxruntime
-        log "ONNX Runtime QNN synchronization complete."
-    else
-        echo "pip3 is not installed. Please install python3-pip to sync onnxruntime-qnn." >&2
-        exit 1
-    fi
-}
-
-case "$action" in
-    status) do_status ;;
-    check) do_check ;;
-    update) do_update ;;
-    sync-onnx) do_sync_onnx ;;
+case "$command" in
+    status) show_status ;;
+    install) install_runtime "$archive" "$accept_license" ;;
+    verify) verify_runtime ;;
+    license) show_license ;;
+    -h|--help) usage ;;
+    *) usage >&2; die "unknown command: $command" ;;
 esac

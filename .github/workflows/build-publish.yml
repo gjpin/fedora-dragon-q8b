@@ -6,11 +6,15 @@ on:
     paths:
       - 'config/**'
       - 'packaging/**'
+      - 'scripts/**'
+      - '.github/workflows/build-publish.yml'
       - 'vendor/**'
   pull_request:
     paths:
       - 'config/**'
       - 'packaging/**'
+      - 'scripts/**'
+      - '.github/workflows/build-publish.yml'
       - 'vendor/**'
   workflow_dispatch:
     inputs:
@@ -30,6 +34,8 @@ jobs:
     env:
       FEDORA_RELEASE: 44
       EVENT_NAME: ${{ github.event_name }}
+      KERNEL_BUILD_ID_OVERRIDE: dragonq8b.${{ github.run_number }}.${{ github.run_attempt }}
+      PACKAGE_RELEASE_OVERRIDE: 1.${{ github.run_number }}.${{ github.run_attempt }}
     steps:
       - name: Install Fedora build tools and Git LFS
         run: |
@@ -57,6 +63,7 @@ jobs:
           shellcheck scripts/*.sh \
             packaging/boot/dragon-q8b-bt-address \
             packaging/boot/dragon-q8b-refresh-boot \
+            packaging/boot/dragon-q8b-thermal \
             packaging/qnn/dragon-q8b-qnn-sync
           for spec in packaging/*/*.spec; do
             rpmspec --parse "$spec" >/dev/null
@@ -66,7 +73,8 @@ jobs:
           bash scripts/detect-affected-packages.sh --help
           bash scripts/validate-e2e.sh --help
           bash scripts/test-e2e-qemu.sh --help
-          test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq 35
+          test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq \
+            "$(wc -l < config/armbian-sc8280xp-edge-patches.sha256)"
       - name: Detect affected packages
         id: detect_packages
         env:

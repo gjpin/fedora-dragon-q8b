@@ -76,6 +76,11 @@ done
 patch_dir="$repo_root/vendor/armbian/sc8280xp-edge-patches"
 patch_manifest="$repo_root/config/armbian-sc8280xp-edge-patches.sha256"
 [[ -d "$patch_dir" ]] || die "missing Armbian patch directory"
+armbian_dts_patch=0005-arm64-dts-sc8280xp-add-radxa-dragon-q8b.patch
+[[ ! -e "$patch_dir/$armbian_dts_patch" ]] || \
+    die "Armbian Q8B DTS patch must not be vendored"
+! grep -Fxq "$armbian_dts_patch" "$repo_root/config/armbian-sc8280xp-edge-patches.list" || \
+    die "Armbian Q8B DTS patch must not be listed"
 (cd "$patch_dir" && sha256sum --check "$patch_manifest") || \
     die "Armbian patch checksum validation failed"
 while IFS= read -r patch_name; do
@@ -117,6 +122,13 @@ tar -tzf "$fastrpc_archive" >/dev/null || die "invalid Qualcomm FastRPC archive"
 archive_has_license "$fastrpc_archive" || die "Qualcomm FastRPC archive has no license file"
 check_lock_hash fastrpc_archive_sha256 \
     "vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz"
+
+[[ "$(lock_value qairt_version)" == "$QAIRT_VERSION" ]] || die "QAIRT version lock mismatch"
+[[ "$(lock_value qairt_download_url)" == "$QAIRT_DOWNLOAD_URL" ]] || die "QAIRT URL lock mismatch"
+[[ "$(lock_value qairt_archive_sha256)" == "$QAIRT_ARCHIVE_SHA256" ]] || die "QAIRT checksum lock mismatch"
+[[ "$(lock_value qairt_license_sha256)" == "$QAIRT_LICENSE_SHA256" ]] || die "QAIRT license lock mismatch"
+[[ "$(lock_value qairt_target)" == "$QAIRT_TARGET" ]] || die "QAIRT target lock mismatch"
+[[ "$(lock_value qairt_dsp_arch)" == "$QAIRT_DSP_ARCH" ]] || die "QAIRT DSP architecture lock mismatch"
 
 for spec in "$repo_root"/packaging/*/*.spec; do
     if grep -Eq '^Source[0-9]*:[[:space:]]+https?://' "$spec"; then

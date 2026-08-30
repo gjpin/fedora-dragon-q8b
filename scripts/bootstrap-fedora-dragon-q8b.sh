@@ -144,9 +144,6 @@ if command -v systemctl >/dev/null 2>&1; then
     if systemctl list-unit-files dragon-q8b-bt.service >/dev/null 2>&1; then
         systemctl enable dragon-q8b-bt.service || warn "could not enable dragon-q8b-bt.service"
     fi
-    if systemctl list-unit-files dragon-q8b-qnn.timer >/dev/null 2>&1; then
-        systemctl enable dragon-q8b-qnn.timer || warn "could not enable dragon-q8b-qnn.timer"
-    fi
     if systemctl list-unit-files bluetooth.service >/dev/null 2>&1; then
         systemctl enable bluetooth.service || warn "could not enable bluetooth.service"
     fi
@@ -205,4 +202,3 @@ if [[ "$(uname -r)" != *dragonq8b* ]]; then
     echo "The custom kernel is installed but not running. Reboot and select the Dragon Q8B kernel from the boot menu."
 fi
 echo "Bootstrap completed without flashing firmware or removing rollback kernels."
-

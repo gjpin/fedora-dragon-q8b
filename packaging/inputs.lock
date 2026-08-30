@@ -1,4 +1,4 @@
-schema: 2
+schema: 3
 radxa_kernel_repo: "https://github.com/radxa/kernel.git"
 radxa_kernel_ref: "4a7a039590c7185ed9c53453b163806311799eed"
 radxa_kernel_branch: "linux-7.0.11"
@@ -20,9 +20,15 @@ alsa_ucm_deb_sha256: "e98278426a43fac2b99f72d299032c2904b62886c3a6fb1f745f5ad0c3
 armbian_build_repo: "https://github.com/armbian/build.git"
 armbian_ref: "1f33ee9db0063ec281d3c273ac5df5dcd6f84450"
 patch_manifest: "config/armbian-sc8280xp-edge-patches.sha256"
-patch_manifest_sha256: "b9c9bc904cfa848d660962da74d48c91460faca689a797b08d6a0ea21af4a9af"
+patch_manifest_sha256: "8200e10e0f21ca95fdd57a9c8a803438693b692f1af247d637331851556d29a1"
 fastrpc_repo: "https://github.com/qualcomm/fastrpc.git"
 fastrpc_ref: "228d98b5f143ed917789cde017a8aa548e65b80b"
 fastrpc_version: "0.0.1"
 fastrpc_archive: "vendor/qualcomm/fastrpc/fastrpc-228d98b5f143ed917789cde017a8aa548e65b80b.tar.gz"
 fastrpc_archive_sha256: "46f68c2e0cb0d5cb461e17024fb60f87a5b73ad28fd60e5450a62d7c104d96ac"
+qairt_version: "2.42.0.251225"
+qairt_download_url: "https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.42.0.251225/v2.42.0.251225.zip"
+qairt_archive_sha256: "1a744ed72a813fc9dd4a29e31b1685f784786102fd45414d74915bb3351ae321"
+qairt_license_sha256: "ec1dccfdcba5c6e64126e84199b8362bf4999107bfa567ebe831dbb4c461692b"
+qairt_target: "aarch64-oe-linux-gcc11.2"
+qairt_dsp_arch: "68"

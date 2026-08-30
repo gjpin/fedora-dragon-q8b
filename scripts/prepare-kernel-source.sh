@@ -19,7 +19,13 @@ ARMBIAN_REF=${ARMBIAN_REF_OVERRIDE:-$ARMBIAN_REF}
 RADXA_KERNEL_REF=${RADXA_KERNEL_REF_OVERRIDE:-$RADXA_KERNEL_REF}
 RADXA_FIRMWARE_REF=${RADXA_FIRMWARE_REF_OVERRIDE:-$RADXA_FIRMWARE_REF}
 UPDATE_PATCH_MANIFEST=${UPDATE_PATCH_MANIFEST:-0}
-KERNEL_BUILD_ID=${KERNEL_BUILD_ID_OVERRIDE:-dragonq8b}
+default_build_id=dragonq8b.local
+if git -C "$repo_root" rev-parse --verify HEAD >/dev/null 2>&1; then
+    commit_time=$(git -C "$repo_root" show -s --format=%ct HEAD)
+    commit_id=$(git -C "$repo_root" rev-parse --short=12 HEAD)
+    default_build_id="dragonq8b.${commit_time}.${commit_id}"
+fi
+KERNEL_BUILD_ID=${KERNEL_BUILD_ID_OVERRIDE:-$default_build_id}
 [[ "$KERNEL_BUILD_ID" =~ ^[A-Za-z0-9._+]+$ ]] || {
     echo "invalid KERNEL_BUILD_ID_OVERRIDE: $KERNEL_BUILD_ID" >&2
     exit 2
@@ -47,6 +53,7 @@ done
 
 radxa_dts_file="$repo_root/vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts"
 armbian_patch_dir="$repo_root/vendor/armbian/sc8280xp-edge-patches"
+armbian_dts_patch=0005-arm64-dts-sc8280xp-add-radxa-dragon-q8b.patch
 [[ -r "$radxa_dts_file" ]] || {
     echo "missing vendored Radxa Q8B DTS: $radxa_dts_file" >&2
     exit 1
@@ -55,6 +62,11 @@ armbian_patch_dir="$repo_root/vendor/armbian/sc8280xp-edge-patches"
     echo "missing vendored Armbian patch directory: $armbian_patch_dir" >&2
     exit 1
 }
+if grep -Fxq "$armbian_dts_patch" "$repo_root/config/armbian-sc8280xp-edge-patches.list" || \
+        [[ -e "$armbian_patch_dir/$armbian_dts_patch" ]]; then
+    echo "the Q8B DTS must come only from Radxa; remove the Armbian DTS patch" >&2
+    exit 1
+fi
 
 radxa_dts=$(<"$radxa_dts_file")
 for marker in \
@@ -143,6 +155,30 @@ while IFS= read -r patch_name; do
     cat "$patch_dir/$patch_name" >> "$combined_patch"
     printf '\n' >> "$combined_patch"
 done < "$list"
+
+# Add the Q8B board file from the pinned Radxa kernel verbatim. Armbian remains
+# a source only for portable driver/SoC changes; it is never a DTS authority.
+dts_lines=$(awk 'END {print NR}' "$radxa_dts_file")
+{
+cat <<'EOF'
+diff --git a/arch/arm64/boot/dts/qcom/Makefile b/arch/arm64/boot/dts/qcom/Makefile
+--- a/arch/arm64/boot/dts/qcom/Makefile
++++ b/arch/arm64/boot/dts/qcom/Makefile
+@@ -294,2 +294,3 @@
+EOF
+printf ' %s\t%s\n' "dtb-\$(CONFIG_ARCH_QCOM)" '+= sc8280xp-microsoft-blackrock.dtb sc8280xp-microsoft-blackrock-el2.dtb'
+printf '+%s\t%s\n' "dtb-\$(CONFIG_ARCH_QCOM)" '+= sc8280xp-radxa-dragon-q8b.dtb'
+printf ' %s\t%s\n' "dtb-\$(CONFIG_ARCH_QCOM)" '+= sda660-inforce-ifc6560.dtb'
+cat <<EOF
+diff --git a/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts b/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts
+new file mode 100644
+--- /dev/null
++++ b/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts
+@@ -0,0 +1,${dts_lines} @@
+EOF
+sed 's/^/+/' "$radxa_dts_file"
+printf '\n'
+} >> "$combined_patch"
 
 # Fedora's kernel spec intentionally uses kernel-local for downstream config
 # fragments. Keep the fragment small and let Fedora's config merger validate
@@ -253,7 +289,7 @@ FEDORA_KERNEL_BRANCH=$fedora_branch
 FEDORA_KERNEL_COMMIT=$fedora_commit
 FEDORA_KERNEL_VERSION=$fedora_kernel_version
 RADXA_KERNEL_REF=$RADXA_KERNEL_REF
-RADXA_KERNEL_DTS_SHA256=$(printf '%s\n' "$radxa_dts" | if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | awk '{print $1}')
+RADXA_KERNEL_DTS_SHA256=$(sha256_file "$radxa_dts_file")
 RADXA_FIRMWARE_REF=$RADXA_FIRMWARE_REF
 ARMBIAN_REF=$ARMBIAN_REF
 KERNEL_BUILD_ID=$KERNEL_BUILD_ID

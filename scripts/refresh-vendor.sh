@@ -144,6 +144,10 @@ mkdir -p "$(dirname "$patch_manifest")"
 patch_base_url="https://raw.githubusercontent.com/armbian/build/${armbian_ref}/${ARMBIAN_PATCH_DIR}"
 while IFS= read -r patch_name; do
     [[ -z "$patch_name" || "$patch_name" == \#* ]] && continue
+    [[ "$patch_name" != 0005-arm64-dts-sc8280xp-add-radxa-dragon-q8b.patch ]] || {
+        echo "refusing to download the Armbian Q8B DTS patch; Radxa is authoritative" >&2
+        exit 1
+    }
     patch_file="$patch_dir/$patch_name"
     echo "Downloading Armbian patch $patch_name"
     download "${patch_base_url}/${patch_name}" "$patch_file"
@@ -205,6 +209,12 @@ ARMBIAN_REF=$armbian_ref
 PATCH_MANIFEST_SHA256=$(sha256_file "$patch_manifest")
 FASTRPC_REF=$fastrpc_ref
 FASTRPC_ARCHIVE_SHA256=$(sha256_file "$fastrpc_archive")
+QAIRT_VERSION=$QAIRT_VERSION
+QAIRT_DOWNLOAD_URL=$QAIRT_DOWNLOAD_URL
+QAIRT_ARCHIVE_SHA256=$QAIRT_ARCHIVE_SHA256
+QAIRT_LICENSE_SHA256=$QAIRT_LICENSE_SHA256
+QAIRT_TARGET=$QAIRT_TARGET
+QAIRT_DSP_ARCH=$QAIRT_DSP_ARCH
 EOF
 
 mkdir -p "$repo_root/vendor"

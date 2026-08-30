@@ -157,6 +157,18 @@ sudo dnf copr enable <your-user>/dragon-q8b
 sudo dnf install dragon-q8b-support
 ```
 
+Install the proprietary Qualcomm QAIRT/QNN SDK directly from Qualcomm after
+reviewing and accepting its bundled license, then validate SC8280XP HTP v68:
+
+```shell
+dragon-q8b-qnn license
+sudo dragon-q8b-qnn install --accept-license
+sudo dragon-q8b-qnn verify
+```
+
+The COPR RPM contains only the installer and Fedora integration. It verifies a
+pinned SHA-256 and does not redistribute the Qualcomm SDK.
+
 Or install from staging while testing:
 
 ```shell

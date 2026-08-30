@@ -26,7 +26,19 @@ RADXA_FIRMWARE_VERSION=${RADXA_FIRMWARE_VERSION_OVERRIDE:-$RADXA_FIRMWARE_VERSIO
 RADXA_OVERLAYS_REF=${RADXA_OVERLAYS_REF_OVERRIDE:-$RADXA_OVERLAYS_REF}
 ALSA_UCM_VERSION=${ALSA_UCM_VERSION_OVERRIDE:-$ALSA_UCM_VERSION}
 FASTRPC_REF=${FASTRPC_REF_OVERRIDE:-$FASTRPC_REF}
-PACKAGE_RELEASE=${PACKAGE_RELEASE_OVERRIDE:-1}
+QAIRT_VERSION=${QAIRT_VERSION_OVERRIDE:-$QAIRT_VERSION}
+QAIRT_DOWNLOAD_URL=${QAIRT_DOWNLOAD_URL_OVERRIDE:-$QAIRT_DOWNLOAD_URL}
+QAIRT_ARCHIVE_SHA256=${QAIRT_ARCHIVE_SHA256_OVERRIDE:-$QAIRT_ARCHIVE_SHA256}
+QAIRT_LICENSE_SHA256=${QAIRT_LICENSE_SHA256_OVERRIDE:-$QAIRT_LICENSE_SHA256}
+QAIRT_TARGET=${QAIRT_TARGET_OVERRIDE:-$QAIRT_TARGET}
+QAIRT_DSP_ARCH=${QAIRT_DSP_ARCH_OVERRIDE:-$QAIRT_DSP_ARCH}
+default_package_release=1.local
+if git -C "$repo_root" rev-parse --verify HEAD >/dev/null 2>&1; then
+    commit_time=$(git -C "$repo_root" show -s --format=%ct HEAD)
+    commit_id=$(git -C "$repo_root" rev-parse --short=12 HEAD)
+    default_package_release="1.${commit_time}.${commit_id}"
+fi
+PACKAGE_RELEASE=${PACKAGE_RELEASE_OVERRIDE:-$default_package_release}
 [[ "$PACKAGE_RELEASE" =~ ^[0-9][A-Za-z0-9._+]*$ ]] || {
     echo "invalid PACKAGE_RELEASE_OVERRIDE: $PACKAGE_RELEASE" >&2
     exit 2
@@ -164,6 +176,24 @@ for entry in "${package_dirs[@]}"; do
     if [[ "$package_dir" == fastrpc ]]; then
         cp "$repo_root/vendor/qualcomm/fastrpc/fastrpc-${FASTRPC_REF}.tar.gz" \
             "$topdir/SOURCES/"
+    fi
+    if [[ "$package_dir" == qnn ]]; then
+        for qnn_source in dragon-q8b-qnn-sync dragon-q8b-qnn.conf; do
+            sed -i \
+                -e "s#^QAIRT_VERSION=.*#QAIRT_VERSION=$QAIRT_VERSION#" \
+                -e "s#^QAIRT_DOWNLOAD_URL=.*#QAIRT_DOWNLOAD_URL=$QAIRT_DOWNLOAD_URL#" \
+                -e "s#^QAIRT_ARCHIVE_SHA256=.*#QAIRT_ARCHIVE_SHA256=$QAIRT_ARCHIVE_SHA256#" \
+                -e "s#^QAIRT_LICENSE_SHA256=.*#QAIRT_LICENSE_SHA256=$QAIRT_LICENSE_SHA256#" \
+                -e "s#^QAIRT_TARGET=.*#QAIRT_TARGET=$QAIRT_TARGET#" \
+                -e "s#^QAIRT_DSP_ARCH=.*#QAIRT_DSP_ARCH=$QAIRT_DSP_ARCH#" \
+                "$topdir/SOURCES/$qnn_source"
+        done
+        sed -i \
+            -e "s#^    export QNN_TARGET=.*#    export QNN_TARGET=$QAIRT_TARGET#" \
+            -e "s#^    export QNN_DSP_ARCH=.*#    export QNN_DSP_ARCH=$QAIRT_DSP_ARCH#" \
+            "$topdir/SOURCES/dragon-q8b-qnn.sh"
+        printf '/opt/qualcomm/qairt/current/lib/%s\n' "$QAIRT_TARGET" \
+            > "$topdir/SOURCES/dragon-q8b-qnn-ld.so.conf"
     fi
     if [[ "$package_dir" == kernel-meta ]]; then
         kernel_spec_target=""

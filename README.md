@@ -80,7 +80,7 @@ The runner automatically selects native hardware acceleration (`-accel hvf` on m
 - **Boot & Dracut Initramfs Policy**: Validates Qualcomm drivers and firmware inclusion in dracut initramfs and tests `/usr/libexec/dragon-q8b-refresh-boot`.
 - **Bluetooth Service**: Validates deterministic locally-administered MAC generation and systemd service.
 - **FastRPC Runtime**: Validates `libcdsprpc.so`, `libadsprpc.so`, `dsp_check`, udev rules, and environment variables.
-- **QNN Synchronization**: Validates `dragon-q8b-qnn` CLI, sync helper, systemd service, timer, and ld.so/profile configuration.
+- **QNN / QAIRT Integration**: Validates the pinned official Qualcomm download metadata, installer CLI, license disclosure, and ld.so/profile configuration. Hardware validation runs after the SDK is explicitly installed on a physical Q8B.
 - **ALSA UCM Profiles**: Validates Qualcomm SC8280XP and Dragon Q8B UCM2 configurations.
 - **Thermal & Fan Cooling**: Validates `dragon-q8b-thermal` utility, interactive menu, `step_wise` PWM fan default, and `/etc/dragon-q8b/thermal.conf` persistence.
 
@@ -110,8 +110,9 @@ git lfs pull
 ```
 
 The kernel build starts from Fedora's `kernel.spec`; it is not a Debian
-kernel repackaging. The custom release identifier is `.dragonq8b.<run>`, so
-stock Fedora kernels remain available as rollback entries.
+kernel repackaging. CI uses `.dragonq8b.<run>.<attempt>` for the kernel and a
+matching unique release for every support RPM, so repeated builds cannot reuse
+an older COPR NVR. Stock Fedora kernels remain available as rollback entries.
 
 The redundancy report tests each patch against the post-Fedora-patch source.
 `FEDORA_PRESENT_EXACT` means Fedora already contains that exact change;
@@ -134,8 +135,16 @@ audio playback/capture, Wi-Fi/Bluetooth, GPIO/I²C/SPI/UART overlays, GPU/VPU,
 thermals, reboot, and shutdown. QEMU and installroot checks in CI cannot
 prove physical Q8B peripheral support.
 
-The proprietary QAI/NPU userspace stack is intentionally not included in the
-initial scope.
+The support bundle includes the `dragon-q8b-qnn` Fedora integration package.
+Qualcomm's license prohibits standalone redistribution of the QAIRT SDK, so the
+RPM does not contain the proprietary archive. Install the Radxa-validated,
+checksum-pinned release directly from Qualcomm after reviewing the license:
+
+```shell
+dragon-q8b-qnn license
+sudo dragon-q8b-qnn install --accept-license
+sudo dragon-q8b-qnn verify
+```
 
 The source-to-package mapping and Radxa OS compatibility basis are documented
 in [docs/radxa-os-porting.md](docs/radxa-os-porting.md).

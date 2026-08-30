@@ -120,6 +120,13 @@ rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/drago
 cp packaging/qnn/dragon-q8b-qnn.spec "$smoke_rpm_topdir/SPECS/"
 find packaging/qnn -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-qnn.spec" >/dev/null
+packaging/qnn/dragon-q8b-qnn-sync --help >/dev/null
+packaging/qnn/dragon-q8b-qnn-sync license | grep -Fq "$QAIRT_DOWNLOAD_URL"
+packaging/qnn/dragon-q8b-qnn-sync status | grep -Fq "Configured QAIRT version : $QAIRT_VERSION"
+if packaging/qnn/dragon-q8b-qnn-sync install >/dev/null 2>&1; then
+    echo "QNN installer accepted installation without explicit license acceptance" >&2
+    exit 1
+fi
 
 cp packaging/meta/dragon-q8b-support.spec "$smoke_rpm_topdir/SPECS/"
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-support.spec" >/dev/null
@@ -139,6 +146,7 @@ bash scripts/prepare-kernel-source.sh --help >/dev/null
 bash scripts/build-srpms.sh --help >/dev/null
 bash scripts/validate-e2e.sh --help >/dev/null
 bash scripts/test-e2e-qemu.sh --help >/dev/null
-test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq 35
+test "$(wc -l < config/armbian-sc8280xp-edge-patches.list)" -eq \
+    "$(wc -l < config/armbian-sc8280xp-edge-patches.sha256)"
 echo "CI smoke test passed"
 EOF
