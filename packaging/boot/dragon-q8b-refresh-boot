@@ -7,19 +7,25 @@ dtb_relpath=qcom/sc8280xp-radxa-dragon-q8b.dtb
 overlay_dir=/usr/share/dragon-q8b/overlays
 overlay_conf=/etc/dragon-q8b/overlays.conf
 only_version=
+best_effort=0
 
 usage() {
     cat <<'EOF'
-Usage: dragon-q8b-refresh-boot [--kernel-version VERSION]
+Usage: dragon-q8b-refresh-boot [--kernel-version VERSION] [--best-effort]
 
 Merge overlays from /etc/dragon-q8b/overlays.conf into the Q8B DTB with
 fdtoverlay and set the BLS devicetree key (grubby --devtree as fallback).
+
+Without --best-effort, a missing overlay, missing fdtoverlay, merge
+failure, or no eligible Q8B DTB is an error. Kernel-install hooks pass
+--best-effort.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --kernel-version) only_version=${2:?missing kernel version}; shift 2 ;;
+        --best-effort) best_effort=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
     esac
@@ -43,30 +49,47 @@ read_overlays() {
 
 merge_dtb() {
     local base=$1 dest=$2
-    local -a args=() overlay
+    local -a args=() requested=() overlay name
     mkdir -p "$(dirname "$dest")"
     while IFS= read -r name; do
         [[ -n "$name" ]] || continue
+        requested+=("$name")
         overlay="$overlay_dir/${name}.dtbo"
         if [[ ! -f "$overlay" ]]; then
-            printf '[dragon-q8b-boot] skipping missing overlay %s\n' "$overlay" >&2
+            printf '[dragon-q8b-boot] missing overlay %s\n' "$overlay" >&2
+            if [[ "$best_effort" -eq 0 ]]; then
+                return 1
+            fi
             continue
         fi
         args+=("$overlay")
     done < <(read_overlays)
-    if [[ ${#args[@]} -eq 0 ]]; then
+    if [[ ${#requested[@]} -eq 0 || ${#args[@]} -eq 0 ]]; then
         cp -a "$base" "$dest"
+        if [[ ${#requested[@]} -gt 0 && ${#args[@]} -eq 0 ]]; then
+            printf '[dragon-q8b-boot] no requested overlays found; copied base DTB\n' >&2
+            [[ "$best_effort" -eq 1 ]] || return 1
+        fi
         return 0
     fi
     command -v fdtoverlay >/dev/null 2>&1 || {
-        printf '[dragon-q8b-boot] fdtoverlay not found; copying base DTB\n' >&2
+        printf '[dragon-q8b-boot] fdtoverlay not found\n' >&2
+        if [[ "$best_effort" -eq 1 ]]; then
+            cp -a "$base" "$dest"
+            return 0
+        fi
+        return 1
+    }
+    if fdtoverlay -i "$base" -o "$dest" "${args[@]}"; then
+        return 0
+    fi
+    printf '[dragon-q8b-boot] fdtoverlay failed\n' >&2
+    if [[ "$best_effort" -eq 1 ]]; then
         cp -a "$base" "$dest"
         return 0
-    }
-    if ! fdtoverlay -i "$base" -o "$dest" "${args[@]}"; then
-        printf '[dragon-q8b-boot] fdtoverlay failed; copying base DTB\n' >&2
-        cp -a "$base" "$dest"
     fi
+    rm -f "$dest"
+    return 1
 }
 
 set_bls_devicetree() {
@@ -100,6 +123,8 @@ set_grubby_devicetree() {
     done
 }
 
+status=0
+processed=0
 declare -A seen_dirs
 for module_dir in /usr/lib/modules/* /lib/modules/*; do
     [[ -d "$module_dir" ]] || continue
@@ -116,7 +141,17 @@ for module_dir in /usr/lib/modules/* /lib/modules/*; do
         continue
     }
     dest="/boot/dtb-$version/$dtb_relpath"
-    merge_dtb "$base_dtb" "$dest"
-    set_bls_devicetree "$version" "$dest"
-    set_grubby_devicetree "$version" "$dest"
+    if merge_dtb "$base_dtb" "$dest"; then
+        processed=$((processed + 1))
+        set_bls_devicetree "$version" "$dest"
+        set_grubby_devicetree "$version" "$dest"
+    else
+        status=1
+        [[ "$best_effort" -eq 1 ]] || continue
+    fi
 done
+if [[ "$best_effort" -eq 0 && "$processed" -eq 0 ]]; then
+    printf '[dragon-q8b-boot] no eligible Q8B kernel DTB to refresh\n' >&2
+    status=1
+fi
+exit "$status"

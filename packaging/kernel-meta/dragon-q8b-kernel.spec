@@ -10,9 +10,8 @@ License:        MIT
 URL:            https://github.com/gjpin/fedora-dragon-q8b
 BuildArch:      noarch
 
-# build-srpms.sh rewrites these two macros from the Fedora kernel spec. Exact
-# NEVRA matching prevents the support bundle from silently selecting stock
-# Fedora kernel packages.
+# build-srpms.sh rewrites these two macros from the prepared Fedora kernel
+# spec in the same run. Absence of that spec is a build failure.
 Requires:       kernel-core%{?_isa} = %{kernel_need_version}-%{kernel_need_release}
 Requires:       kernel-modules-core%{?_isa} = %{kernel_need_version}-%{kernel_need_release}
 Requires:       kernel-modules%{?_isa} = %{kernel_need_version}-%{kernel_need_release}
@@ -25,6 +24,9 @@ leaving older stock and custom kernels installed for rollback.
 %files
 
 %changelog
+* Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.1.0-3
+- Require a prepared kernel.spec so standalone meta builds cannot pin a stale NVR.
+
 * Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.1.0-2
 - Recommend kernel-devel at the pinned NVR instead of requiring it.
 

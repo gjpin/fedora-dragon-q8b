@@ -169,8 +169,12 @@ makefile="$working_tree/arch/arm64/boot/dts/qcom/Makefile"
 [[ -r "$makefile" ]] || die "missing Fedora DTS Makefile after rpmbuild -bp: $makefile"
 makefile_hunk="$kernel_dir/dragon-q8b-dts-makefile.patch"
 : > "$makefile_hunk"
-if grep -Fq 'sc8280xp-radxa-dragon-q8b.dtb' "$makefile"; then
-    echo "Makefile already lists sc8280xp-radxa-dragon-q8b.dtb; skipping Makefile hunk"
+dtb_line_needed=1
+dtc_flags_needed=1
+grep -Fq 'sc8280xp-radxa-dragon-q8b.dtb' "$makefile" && dtb_line_needed=0
+grep -Fq 'DTC_FLAGS_sc8280xp-radxa-dragon-q8b' "$makefile" && dtc_flags_needed=0
+if [[ "$dtb_line_needed" -eq 0 && "$dtc_flags_needed" -eq 0 ]]; then
+    echo "Makefile already lists sc8280xp-radxa-dragon-q8b.dtb and overlay symbols; skipping Makefile hunk"
 else
     last_line=$(grep 'sc8280xp-.*\.dtb' "$makefile" | tail -n1 || true)
     [[ -n "$last_line" ]] || die "no sc8280xp dtb line in Fedora qcom Makefile"
@@ -179,17 +183,20 @@ else
     tmp=$(mktemp)
     diffout=$(mktemp)
     cp "$makefile" "$orig"
-    awk -v insert="$new_line" '
+    awk -v insert="$new_line" -v add_dtb="$dtb_line_needed" -v add_flags="$dtc_flags_needed" '
         { lines[NR]=$0 }
         /sc8280xp-.*\.dtb/ { last=NR }
         END {
             if (!last) exit 1
             for (i = 1; i <= NR; i++) {
                 print lines[i]
-                if (i == last) print insert
+                if (i == last) {
+                    if (add_dtb == 1) print insert
+                    if (add_flags == 1) print "DTC_FLAGS_sc8280xp-radxa-dragon-q8b := -@"
+                }
             }
         }
-    ' "$orig" > "$tmp" || die "could not insert Q8B dtb line into Makefile"
+    ' "$orig" > "$tmp" || die "could not insert Q8B dtb/DTC_FLAGS into Makefile"
     diff_ec=0
     diff -u "$orig" "$tmp" > "$diffout" || diff_ec=$?
     [[ "$diff_ec" -eq 1 ]] || die "diff failed generating Makefile hunk (exit $diff_ec)"

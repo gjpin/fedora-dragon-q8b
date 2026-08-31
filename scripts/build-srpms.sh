@@ -4,12 +4,14 @@ set -Eeuo pipefail
 usage() {
     cat <<'EOF'
 Usage: build-srpms.sh --output DIR [--source-dir DIR] [--release N] [--packages "PKG..."]
+                   [--binary-output DIR]
 
 Build the prepared Fedora kernel SRPM and/or the Dragon Q8B support SRPMs.
 This script is intended for Fedora/COPR builders.
 
 Options:
   --output DIR          Destination directory for generated .src.rpm files (required)
+  --binary-output DIR   Also write binary RPMs for non-kernel packages to DIR
   --source-dir DIR      Fedora kernel source tree directory (required if building kernel)
   --release N           Fedora release number (default: 44)
   --packages "PKG..."   Space/comma-separated list of packages to build (default: "all")
@@ -47,6 +49,7 @@ PACKAGE_RELEASE=${PACKAGE_RELEASE_OVERRIDE:-$default_package_release}
 
 source_dir=
 output=
+binary_output=
 release=${FEDORA_RELEASE:-44}
 packages_arg="all"
 
@@ -54,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --source-dir) source_dir=${2:?missing source directory}; shift 2 ;;
         --output) output=${2:?missing output directory}; shift 2 ;;
+        --binary-output) binary_output=${2:?missing binary RPM directory}; shift 2 ;;
         --release) release=${2:?missing Fedora release}; shift 2 ;;
         --packages) packages_arg=${2:?missing packages list}; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -164,8 +168,7 @@ for entry in "${package_dirs[@]}"; do
         cp "$repo_root/config/overlays.list" "$topdir/SOURCES/overlays.list"
     fi
     if [[ "$package_dir" == boot ]]; then
-        cp "$repo_root/config/cmdline.d/50-dragon-q8b.conf" \
-            "$topdir/SOURCES/cmdline-50-dragon-q8b.conf"
+        cp "$repo_root/config/cmdline.tokens" "$topdir/SOURCES/cmdline.tokens"
     fi
     if [[ "$package_dir" == alsa ]]; then
         cp "$repo_root/vendor/radxa/alsa/alsa-ucm-conf-${ALSA_UCM_VERSION}.tar.gz" \
@@ -201,15 +204,30 @@ for entry in "${package_dirs[@]}"; do
             kernel_spec_target="$source_dir/kernel.spec"
         fi
 
-        if [[ -n "$kernel_spec_target" ]]; then
-            kernel_version=$(rpmspec --query --queryformat '%{VERSION}\n' "$kernel_spec_target" | awk 'NR == 1 {value=$0} END {print value}')
-            kernel_release=$(rpmspec --query --queryformat '%{RELEASE}\n' "$kernel_spec_target" | awk 'NR == 1 {value=$0} END {print value}')
-            sed -i "s/^%global kernel_need_version .*/%global kernel_need_version $kernel_version/" "$topdir/SPECS/$spec_name"
-            sed -i "s/^%global kernel_need_release .*/%global kernel_need_release $kernel_release/" "$topdir/SPECS/$spec_name"
+        if [[ -z "$kernel_spec_target" ]]; then
+            echo "dragon-q8b-kernel requires a prepared kernel.spec (build kernel in the same run)" >&2
+            exit 1
         fi
+        kernel_version=$(rpmspec --query --queryformat '%{VERSION}\n' "$kernel_spec_target" | awk 'NR == 1 {value=$0} END {print value}')
+        kernel_release=$(rpmspec --query --queryformat '%{RELEASE}\n' "$kernel_spec_target" | awk 'NR == 1 {value=$0} END {print value}')
+        [[ -n "$kernel_version" && -n "$kernel_release" ]] || {
+            echo "could not query kernel NVR from $kernel_spec_target" >&2
+            exit 1
+        }
+        sed -i "s/^%global kernel_need_version .*/%global kernel_need_version $kernel_version/" "$topdir/SPECS/$spec_name"
+        sed -i "s/^%global kernel_need_release .*/%global kernel_need_release $kernel_release/" "$topdir/SPECS/$spec_name"
     fi
     rpmbuild -bs --define "_topdir $topdir" "$topdir/SPECS/$spec_name"
     cp "$topdir"/SRPMS/*.src.rpm "$output/"
+    if [[ -n "$binary_output" ]]; then
+        mkdir -p "$binary_output"
+        echo "Building binary RPMs for $package_name"
+        rpmbuild -bb --define "_topdir $topdir" "$topdir/SPECS/$spec_name"
+        find "$topdir/RPMS" -type f -name '*.rpm' ! -name '*.src.rpm' -exec cp -f {} "$binary_output/" \;
+    fi
 done
 
 echo "SRPMs written to $output"
+if [[ -n "$binary_output" ]]; then
+    echo "Binary RPMs written to $binary_output"
+fi

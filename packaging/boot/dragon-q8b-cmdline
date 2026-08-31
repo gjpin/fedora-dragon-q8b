@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+# Append or remove Dragon Q8B kernel command-line tokens.
+# Never replaces Fedora's existing BLS options or /etc/kernel/cmdline.
+# Never creates /etc/kernel/cmdline.
+set -Eeuo pipefail
+
+tokens_file=${DRAGON_Q8B_TOKENS_FILE:-/usr/lib/dragon-q8b/cmdline.tokens}
+etc_cmdline=${DRAGON_Q8B_CMDLINE_FILE:-/etc/kernel/cmdline}
+owned_file=${DRAGON_Q8B_OWNED_FILE:-/var/lib/dragon-q8b/cmdline-owned}
+only_version=
+
+usage() {
+    cat <<'EOF'
+Usage: dragon-q8b-cmdline apply|remove [--kernel-version VERSION]
+
+Append (apply) or strip (remove) board-owned tokens such as
+clk_ignore_unused. Fedora's existing command line is left intact.
+Tokens this package did not introduce are left in place on remove.
+EOF
+}
+
+log() { printf '[dragon-q8b-cmdline] %s\n' "$*" >&2; }
+
+command=${1:-}
+shift || true
+case "$command" in
+    apply|remove) ;;
+    -h|--help|help) usage; exit 0 ;;
+    *) usage >&2; exit 2 ;;
+esac
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --kernel-version) only_version=${2:?missing kernel version}; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+read_tokens() {
+    local file=${1:-$tokens_file}
+    [[ -r "$file" ]] || return 0
+    awk 'NF && $1 !~ /^#/ {print $1}' "$file"
+}
+
+line_has_token() {
+    local line=$1 token=$2
+    awk -v tok="$token" -v line="$line" 'BEGIN {
+        n = split(line, a, /[[:space:]]+/)
+        for (i = 1; i <= n; i++) if (a[i] == tok) exit 0
+        exit 1
+    }'
+}
+
+append_token_to_line() {
+    local line=$1 token=$2
+    if line_has_token "$line" "$token"; then
+        printf '%s\n' "$line"
+        return 0
+    fi
+    if [[ -z "${line//[[:space:]]/}" ]]; then
+        printf '%s\n' "$token"
+        return 0
+    fi
+    printf '%s %s\n' "$line" "$token"
+}
+
+strip_token_from_line() {
+    local line=$1 token=$2
+    awk -v tok="$token" -v line="$line" 'BEGIN {
+        n = split(line, a, /[[:space:]]+/)
+        out = ""
+        for (i = 1; i <= n; i++) {
+            if (a[i] == "" || a[i] == tok) continue
+            out = (out == "" ? a[i] : out " " a[i])
+        }
+        print out
+    }'
+}
+
+file_has_token() {
+    local file=$1 token=$2
+    [[ -f "$file" ]] || return 1
+    local content
+    content=$(grep -vE '^[[:space:]]*(#|$)' "$file" | tr '\n' ' ')
+    line_has_token "$content" "$token"
+}
+
+atomic_replace() {
+    local dest=$1 tmp=$2
+    if command -v chmod >/dev/null 2>&1 && chmod --reference="$dest" "$tmp" 2>/dev/null; then
+        :
+    elif command -v stat >/dev/null 2>&1; then
+        chmod "$(stat -c '%a' "$dest")" "$tmp"
+    fi
+    mv "$tmp" "$dest"
+}
+
+append_token_to_file() {
+    local file=$1 token=$2 tmp
+    [[ -f "$file" ]] || return 0
+    file_has_token "$file" "$token" && return 0
+    tmp=$(mktemp)
+    awk -v tok="$token" '
+        {
+            lines[NR] = $0
+            if ($0 !~ /^[[:space:]]*(#|$)/) last = NR
+        }
+        END {
+            if (NR == 0) { print tok; exit }
+            for (i = 1; i <= NR; i++) {
+                if (i == last) {
+                    if (lines[i] ~ /[^[:space:]]/) print lines[i] " " tok
+                    else print tok
+                } else {
+                    print lines[i]
+                }
+            }
+            if (!last) print tok
+        }
+    ' "$file" > "$tmp"
+    atomic_replace "$file" "$tmp"
+}
+
+remove_token_from_file() {
+    local file=$1 token=$2 tmp
+    [[ -f "$file" ]] || return 0
+    tmp=$(mktemp)
+    awk -v tok="$token" '
+        function del_tok(s,    n, a, i, out) {
+            n = split(s, a, /[[:space:]]+/)
+            out = ""
+            for (i = 1; i <= n; i++) {
+                if (a[i] == "" || a[i] == tok) continue
+                out = (out == "" ? a[i] : out " " a[i])
+            }
+            return out
+        }
+        /^[[:space:]]*#/ { print; next }
+        /^[[:space:]]*$/ { print; next }
+        {
+            s = del_tok($0)
+            if (s != "") print s
+        }
+    ' "$file" > "$tmp"
+    atomic_replace "$file" "$tmp"
+}
+
+bls_entries() {
+    local version=${1:-}
+    shopt -s nullglob
+    local entry
+    for entry in \
+        /boot/loader/entries/*.conf \
+        /boot/efi/loader/entries/*.conf \
+        /loader/entries/*.conf; do
+        [[ -f "$entry" ]] || continue
+        if [[ -n "$version" && "$entry" != *"${version}"* ]]; then
+            continue
+        fi
+        printf '%s\n' "$entry"
+    done
+    shopt -u nullglob
+}
+
+update_bls_entry() {
+    local entry=$1 action=$2 token=$3
+    local line new rest
+    [[ -f "$entry" ]] || return 0
+    if ! grep -q '^options ' "$entry"; then
+        return 0
+    fi
+    line=$(grep '^options ' "$entry" | head -n1)
+    rest=${line#options }
+    rest=${rest# }
+    if [[ "$action" == apply ]]; then
+        new=$(append_token_to_line "$rest" "$token")
+        new=${new%$'\n'}
+    else
+        new=$(strip_token_from_line "$rest" "$token")
+        new=${new%$'\n'}
+    fi
+    [[ "$new" == "$rest" ]] && return 0
+    if [[ -n "$new" ]]; then
+        sed -i "s#^options .*#options ${new}#" "$entry"
+    fi
+}
+
+vmlinuz_for_version() {
+    local version=$1 image
+    for image in \
+        "/usr/lib/modules/$version/vmlinuz" \
+        "/lib/modules/$version/vmlinuz" \
+        "/boot/vmlinuz-$version"; do
+        if [[ -f "$image" ]]; then
+            printf '%s\n' "$image"
+            return 0
+        fi
+    done
+    return 1
+}
+
+grubby_update() {
+    local action=$1 token=$2 version=${3:-} image
+    command -v grubby >/dev/null 2>&1 || return 1
+    if [[ "$action" == apply ]]; then
+        if [[ -n "$version" ]]; then
+            image=$(vmlinuz_for_version "$version") || return 1
+            grubby --update-kernel "$image" --args="$token" || return 1
+        else
+            grubby --update-kernel=ALL --args="$token" || return 1
+        fi
+    else
+        if [[ -n "$version" ]]; then
+            image=$(vmlinuz_for_version "$version") || return 1
+            grubby --update-kernel "$image" --remove-args="$token" || return 1
+        else
+            grubby --update-kernel=ALL --remove-args="$token" || return 1
+        fi
+    fi
+}
+
+token_present_anywhere() {
+    local token=$1 entry line rest
+    file_has_token "$etc_cmdline" "$token" && return 0
+    if command -v grubby >/dev/null 2>&1; then
+        if grubby --info=ALL 2>/dev/null | grep -qw -- "$token"; then
+            return 0
+        fi
+    fi
+    while IFS= read -r entry; do
+        [[ -n "$entry" ]] || continue
+        [[ -f "$entry" ]] || continue
+        line=$(grep '^options ' "$entry" | head -n1 || true)
+        [[ -n "$line" ]] || continue
+        rest=${line#options }
+        rest=${rest# }
+        line_has_token "$rest" "$token" && return 0
+    done < <(bls_entries)
+    return 1
+}
+
+is_owned() {
+    local token=$1
+    [[ -f "$owned_file" ]] || return 1
+    awk -v tok="$token" '$1 == tok { found = 1 } END { exit !found }' "$owned_file"
+}
+
+mark_owned() {
+    local token=$1
+    is_owned "$token" && return 0
+    mkdir -p "$(dirname "$owned_file")"
+    printf '%s\n' "$token" >> "$owned_file"
+}
+
+unmark_owned() {
+    local token=$1 tmp
+    [[ -f "$owned_file" ]] || return 0
+    tmp=$(mktemp)
+    awk -v tok="$token" '$1 != tok { print }' "$owned_file" > "$tmp"
+    if [[ -s "$tmp" ]]; then
+        atomic_replace "$owned_file" "$tmp"
+    else
+        rm -f "$tmp" "$owned_file"
+    fi
+}
+
+mapfile -t tokens < <(read_tokens)
+if [[ ${#tokens[@]} -eq 0 ]]; then
+    log "no tokens in $tokens_file"
+    exit 0
+fi
+
+for token in "${tokens[@]}"; do
+    [[ -n "$token" ]] || continue
+    if [[ "$command" == apply ]]; then
+        if ! is_owned "$token"; then
+            if token_present_anywhere "$token"; then
+                log "token $token already present; not taking ownership"
+            else
+                mark_owned "$token"
+            fi
+        fi
+        append_token_to_file "$etc_cmdline" "$token"
+        if ! grubby_update apply "$token" "$only_version"; then
+            while IFS= read -r entry; do
+                [[ -n "$entry" ]] || continue
+                update_bls_entry "$entry" apply "$token"
+            done < <(bls_entries "$only_version")
+        fi
+    else
+        if ! is_owned "$token"; then
+            log "not removing $token (not introduced by this package)"
+            continue
+        fi
+        remove_token_from_file "$etc_cmdline" "$token"
+        if ! grubby_update remove "$token" "$only_version"; then
+            while IFS= read -r entry; do
+                [[ -n "$entry" ]] || continue
+                update_bls_entry "$entry" remove "$token"
+            done < <(bls_entries "$only_version")
+        fi
+        unmark_owned "$token"
+    fi
+    log "$command $token"
+done

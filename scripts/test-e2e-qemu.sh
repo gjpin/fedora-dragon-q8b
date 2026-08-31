@@ -323,14 +323,93 @@ elif [[ -d "/root/repo" ]]; then
     echo "Using embedded repository scripts from /root/repo"
 fi
 
-# Install copr or local packages
+# Install COPR and/or local packages. QEMU virt cannot boot the custom Q8B
+# kernel, so the guest installs the userspace stack and only nodeps-installs
+# dragon-q8b-support (it Requires the custom kernel).
 copr_target="__COPR_TARGET__"
-rpm_mount="/rpm-packages"
 dnf_cmd=$(command -v dnf5 2>/dev/null || command -v dnf 2>/dev/null || echo "dnf")
+dnf_opts=(
+    --nodocs
+    --setopt=install_weak_deps=False
+    --setopt=max_parallel_downloads=1
+    --setopt=timeout=120
+    --setopt=retries=10
+)
+userspace_fedora_pkgs=(qrtr tqftpserv bluez alsa-ucm qcom-firmware pd-mapper dracut grubby)
+userspace_q8b_pkgs=(
+    dragon-q8b-firmware
+    dragon-q8b-boot
+    dragon-q8b-overlays
+    dragon-q8b-alsa-ucm
+    fastrpc
+    dragon-q8b-fastrpc
+    dragon-q8b-qnn
+)
 
-if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
-    if [[ "$copr_target" != */* ]]; then
-        echo "COPR must be OWNER/PROJECT (got: $copr_target)" >&2
+mount_rpm_dir() {
+    mkdir -p /mnt/rpm-9p /mnt/q8brpms /rpm-packages
+    if mount -t 9p -o trans=virtio,version=9p2000.L rpm-packages /mnt/rpm-9p 2>/dev/null \
+        && compgen -G "/mnt/rpm-9p/*.rpm" >/dev/null; then
+        echo "Host RPM directory mounted via 9p virtfs at /mnt/rpm-9p" >&2
+        printf '%s' /mnt/rpm-9p
+        return 0
+    fi
+    local rpms_dev=""
+    rpms_dev=$(blkid -L Q8BRPMS 2>/dev/null || true)
+    if [[ -z "$rpms_dev" ]]; then
+        for cand in /dev/disk/by-label/Q8BRPMS /dev/vdb /dev/vdc /dev/sda /dev/sdb; do
+            if [[ -e "$cand" ]] && blkid "$cand" 2>/dev/null | grep -q 'LABEL="Q8BRPMS"'; then
+                rpms_dev=$cand
+                break
+            fi
+        done
+    fi
+    if [[ -n "$rpms_dev" ]] && mount -o ro "$rpms_dev" /mnt/q8brpms 2>/dev/null \
+        && compgen -G "/mnt/q8brpms/*.rpm" >/dev/null; then
+        echo "RPM ISO mounted from $rpms_dev at /mnt/q8brpms" >&2
+        printf '%s' /mnt/q8brpms
+        return 0
+    fi
+    return 1
+}
+
+install_local_rpms() {
+    local rpm_mount=$1
+    local -a installable=() nodeps=()
+    local rpm name
+    echo "Installing local RPM packages from $rpm_mount..."
+    while IFS= read -r -d '' rpm; do
+        name=$(rpm -qp --qf '%{NAME}' "$rpm")
+        case "$name" in
+            kernel|kernel-core|kernel-modules|kernel-modules-core|kernel-devel|dragon-q8b-kernel)
+                echo "Skipping kernel package $name (not used in QEMU virt)"
+                ;;
+            *-debuginfo|*-debugsource|fastrpc-devel)
+                echo "Skipping $name"
+                ;;
+            dragon-q8b-support)
+                nodeps+=("$rpm")
+                ;;
+            *)
+                installable+=("$rpm")
+                ;;
+        esac
+    done < <(find "$rpm_mount" -maxdepth 1 -type f -name '*.rpm' ! -name '*.src.rpm' -print0)
+
+    "$dnf_cmd" -y install "${dnf_opts[@]}" "${userspace_fedora_pkgs[@]}"
+    if [[ ${#installable[@]} -gt 0 ]]; then
+        "$dnf_cmd" -y install "${dnf_opts[@]}" "${installable[@]}"
+    fi
+    if [[ ${#nodeps[@]} -gt 0 ]]; then
+        echo "Installing dragon-q8b-support with --nodeps (custom kernel not present in QEMU)"
+        rpm -Uvh --nodeps "${nodeps[@]}"
+    fi
+}
+
+install_copr_userspace() {
+    local copr=$1
+    if [[ "$copr" != */* ]]; then
+        echo "COPR must be OWNER/PROJECT (got: $copr)" >&2
         exit 1
     fi
     fedora_ver=$(rpm -E '%{fedora}' 2>/dev/null || true)
@@ -342,17 +421,26 @@ if [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
         "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf-plugins-core >/dev/null 2>&1 || \
             "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs dnf5-plugins || true
     fi
-    "$dnf_cmd" -y copr enable "$copr_target" 
+    "$dnf_cmd" -y copr enable "$copr"
     if [[ -x "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" ]]; then
         echo "Running bootstrap-fedora-dragon-q8b.sh from repository..."
-        bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --copr "$copr_target"
-    else
-        echo "Installing dragon-q8b-support package via $dnf_cmd..."
-        "$dnf_cmd" -y install --setopt=install_weak_deps=False --nodocs --setopt=max_parallel_downloads=1 --setopt=timeout=120 --setopt=retries=10 dragon-q8b-support
+        bash "$repo_mount/scripts/bootstrap-fedora-dragon-q8b.sh" --force --skip-dracut --copr "$copr" \
+            || echo "bootstrap could not install dragon-q8b-support (expected in QEMU without the custom kernel)"
     fi
-elif [[ -d "$rpm_mount" ]] && compgen -G "$rpm_mount/*.rpm" >/dev/null; then
-    echo "Installing local RPM packages from $rpm_mount..."
-    dnf -y install "$rpm_mount"/*.rpm || dnf5 -y install "$rpm_mount"/*.rpm
+    echo "Installing Fedora and Dragon Q8B userspace packages from COPR..."
+    "$dnf_cmd" -y install "${dnf_opts[@]}" --skip-unavailable \
+        "${userspace_fedora_pkgs[@]}" "${userspace_q8b_pkgs[@]}" || true
+    "$dnf_cmd" -y install "${dnf_opts[@]}" dragon-q8b-support \
+        || echo "dragon-q8b-support not installed (missing from COPR or requires custom kernel)"
+}
+
+rpm_mount=""
+if rpm_mount=$(mount_rpm_dir); then
+    install_local_rpms "$rpm_mount"
+elif [[ -n "$copr_target" && "$copr_target" != "none" ]]; then
+    install_copr_userspace "$copr_target"
+else
+    echo "No local RPMs or COPR target available; validation will fail missing packages" >&2
 fi
 
 # Install validation utilities (e.g. dtc for DTB decompile testing)
@@ -417,6 +505,7 @@ runcmd:
 EOF
 
 cidata_iso="$work_dir/cidata.iso"
+rpm_iso=""
 if [[ $dry_run -eq 0 ]]; then
     echo "Generating cloud-init seed drive ($cidata_iso)..."
 
@@ -453,6 +542,35 @@ PYEOF
     fi
 fi
 
+if [[ -n "$rpm_dir" && -d "$rpm_dir" ]]; then
+    rpm_iso="$work_dir/rpms.iso"
+    if [[ $dry_run -eq 0 ]]; then
+        shopt -s nullglob
+        rpm_files=("$rpm_dir"/*.rpm)
+        shopt -u nullglob
+        if [[ ${#rpm_files[@]} -eq 0 ]]; then
+            echo "No RPM files found in $rpm_dir" >&2
+            rpm_iso=""
+        else
+            echo "Generating RPM data drive ($rpm_iso)..."
+            iso_ok=0
+            if command -v xorrisofs >/dev/null 2>&1; then
+                xorrisofs -output "$rpm_iso" -volid Q8BRPMS -joliet -rock "${rpm_files[@]}" >/dev/null 2>&1 && iso_ok=1
+            fi
+            if [[ $iso_ok -eq 0 ]] && command -v genisoimage >/dev/null 2>&1; then
+                genisoimage -output "$rpm_iso" -volid Q8BRPMS -joliet -rock "${rpm_files[@]}" >/dev/null 2>&1 && iso_ok=1
+            fi
+            if [[ $iso_ok -eq 0 ]] && command -v mkisofs >/dev/null 2>&1; then
+                mkisofs -output "$rpm_iso" -volid Q8BRPMS -joliet -rock "${rpm_files[@]}" >/dev/null 2>&1 && iso_ok=1
+            fi
+            if [[ $iso_ok -eq 0 ]]; then
+                echo "could not generate RPM ISO from $rpm_dir (install xorriso/genisoimage)" >&2
+                exit 1
+            fi
+        fi
+    fi
+fi
+
 # -----------------------------------------------------------------------------
 # Assemble QEMU Command Line
 # -----------------------------------------------------------------------------
@@ -483,6 +601,9 @@ fi
 if [[ -n "$rpm_dir" && -d "$rpm_dir" ]]; then
     qemu_args+=(-virtfs "local,path=$rpm_dir,mount_tag=rpm-packages,security_model=none,readonly=on")
 fi
+if [[ -n "$rpm_iso" && ( $dry_run -eq 1 || -f "$rpm_iso" ) ]]; then
+    qemu_args+=(-drive "file=$rpm_iso,format=raw,if=virtio,readonly=on")
+fi
 
 echo "========================================================"
 echo " Fedora Dragon Q8B QEMU E2E Test Runner"
@@ -494,6 +615,7 @@ echo " Memory:         ${memory} MB"
 echo " Firmware:       $firmware_code"
 echo " Base Image:     $image_file"
 echo " Target COPR:    ${copr_repo:-none (standalone)}"
+echo " Local RPMs:     ${rpm_dir:-none}"
 echo " Output Log:     $console_log"
 echo " Timeout:        ${timeout_sec}s"
 echo "========================================================"

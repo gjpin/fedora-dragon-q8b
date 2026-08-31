@@ -152,6 +152,17 @@ base_deps=(
     dtc
 )
 for pkg in "${base_deps[@]}"; do
+    if [[ "$pkg" == pd-mapper ]]; then
+        if rpm -q pd-mapper >/dev/null 2>&1; then
+            log_ok "Base dependency RPM pd-mapper is installed"
+        elif rpm -q --whatprovides pd-mapper >/dev/null 2>&1; then
+            provider=$(rpm -q --whatprovides pd-mapper | head -n 1)
+            log_ok "Base dependency pd-mapper is provided by $provider"
+        else
+            log_fail "Base dependency RPM pd-mapper is installed" "package is not installed"
+        fi
+        continue
+    fi
     if rpm -q "$pkg" >/dev/null 2>&1; then
         log_ok "Base dependency RPM $pkg is installed"
     else
@@ -285,8 +296,27 @@ if [[ -d "$overlay_dir" ]]; then
     else
         log_fail "FPC PCIe overlay present" "missing sc8280xp-radxa-dragon-q8b-fpc-pcie.dtbo"
     fi
-    if [[ -f "$overlay_dir/sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo" ]]; then
+    fan_dtbo="$overlay_dir/sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo"
+    if [[ -f "$fan_dtbo" ]]; then
         log_ok "Heatsink 6845B pwm-fan overlay is present"
+        if command -v fdtget >/dev/null 2>&1; then
+            read -r _fan_provider fan_channel fan_period fan_flags < <(
+                fdtget -t i "$fan_dtbo" /fragment@1/__overlay__/pwm-fan pwms 2>/dev/null || true
+            )
+            fan_shutdown=$(fdtget -t i "$fan_dtbo" \
+                /fragment@1/__overlay__/pwm-fan fan-shutdown-percent 2>/dev/null || true)
+            fan_gpio=$(fdtget -t i "$fan_dtbo" \
+                /fragment@1/__overlay__/pwm-gpio-fan gpios 2>/dev/null || true)
+            if [[ "$fan_channel" == 0 && "$fan_period" == 40000 && "$fan_flags" == 1 \
+                && "$fan_shutdown" == 100 && " $fan_gpio " == *" 119 0 "* ]] \
+                && fdtget -p "$fan_dtbo" /fragment@0/__overlay__/fan-pwm-state 2>/dev/null \
+                    | grep -qx bias-pull-down; then
+                log_ok "6845B DTBO models GPIO119/Q20 inversion and pulled-high fail-safe"
+            else
+                log_fail "6845B DTBO electrical model" \
+                    "expected GPIO119 active-high, 25 kHz inverted PWM, pull-down, shutdown 100%"
+            fi
+        fi
     else
         log_fail "Heatsink 6845B pwm-fan overlay present" "missing sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo"
     fi
@@ -372,11 +402,40 @@ else
     log_fail "Boot refresh script exists and executable" "missing $refresh_boot"
 fi
 
-cmdline_d="/usr/lib/kernel/cmdline.d/50-dragon-q8b.conf"
-if [[ -f "$cmdline_d" ]] && grep -qx 'clk_ignore_unused' "$cmdline_d"; then
-    log_ok "kernel-install cmdline.d ships clk_ignore_unused only"
+cmdline_tokens="/usr/lib/dragon-q8b/cmdline.tokens"
+cmdline_helper="/usr/libexec/dragon-q8b-cmdline"
+if [[ -f "$cmdline_tokens" ]] && grep -qx 'clk_ignore_unused' "$cmdline_tokens" && [[ -x "$cmdline_helper" ]]; then
+    log_ok "board cmdline tokens and append helper are installed"
 else
-    log_fail "kernel-install cmdline.d" "missing $cmdline_d or unexpected default cmdline"
+    log_fail "board cmdline tokens" "missing $cmdline_tokens or $cmdline_helper"
+fi
+if [[ -e /usr/lib/kernel/cmdline.d/50-dragon-q8b.conf ]]; then
+    log_fail "kernel cmdline drop-in absent" "legacy /usr/lib/kernel/cmdline.d/50-dragon-q8b.conf must not be shipped"
+fi
+if [[ -f /usr/lib/kernel/cmdline ]]; then
+    packed_cmdline=$(grep -vE '^[[:space:]]*(#|$)' /usr/lib/kernel/cmdline | tr '\n' ' ')
+    packed_cmdline=$(printf '%s' "$packed_cmdline" | awk '{$1=$1; print}')
+    if [[ "$packed_cmdline" == "clk_ignore_unused" ]]; then
+        log_fail "Fedora kernel cmdline preserved" "/usr/lib/kernel/cmdline contains only clk_ignore_unused"
+    else
+        log_ok "packaged cmdline does not replace Fedora /usr/lib/kernel/cmdline"
+    fi
+fi
+if command -v grubby >/dev/null 2>&1; then
+    grubby_info=$(grubby --info=ALL 2>/dev/null || true)
+    if [[ -n "$grubby_info" ]]; then
+        if grep -qw 'clk_ignore_unused' <<< "$grubby_info"; then
+            if grep -Eq 'root=|BOOT_IMAGE=|console=|ostree=' <<< "$grubby_info"; then
+                log_ok "clk_ignore_unused is appended alongside Fedora BLS options"
+            else
+                log_fail "Fedora BLS options preserved" "clk_ignore_unused present without Fedora options"
+            fi
+        else
+            log_fail "clk_ignore_unused appended" "grubby entries lack clk_ignore_unused"
+        fi
+    elif [[ $allow_virtual -eq 1 ]]; then
+        log_skip "grubby BLS cmdline check" "no boot entries in this VM"
+    fi
 fi
 if [[ -x /usr/lib/kernel/install.d/50-dragon-q8b.install && -x /usr/lib/kernel/install.d/91-dragon-q8b.install ]]; then
     log_ok "kernel-install plugins 50-dragon-q8b and 91-dragon-q8b are installed"
@@ -613,11 +672,18 @@ if command -v systemctl >/dev/null 2>&1; then
     units_to_check=(
         "dragon-q8b-bt.service"
         "dragon-q8b-thermal.service"
-        "pd-mapper.service"
+        "tqftpserv.service"
     )
     for u in "${units_to_check[@]}"; do
         if systemctl list-unit-files "$u" >/dev/null 2>&1; then
             log_ok "Systemd unit $u is recognized by systemd"
+            if [[ "$u" == tqftpserv.service ]]; then
+                if systemctl is-enabled tqftpserv.service >/dev/null 2>&1; then
+                    log_ok "Systemd unit tqftpserv.service is enabled"
+                else
+                    log_fail "Systemd unit tqftpserv.service enabled" "preset did not enable tqftpserv.service"
+                fi
+            fi
         else
             log_fail "Systemd unit $u recognized" "unit not found in systemctl list-unit-files"
         fi

@@ -78,6 +78,7 @@ cd "$repo_root"
 bash -n scripts/*.sh \
     packaging/boot/dragon-q8b-bt-address \
     packaging/boot/dragon-q8b-refresh-boot \
+    packaging/boot/dragon-q8b-cmdline \
     packaging/boot/dragon-q8b-thermal \
     packaging/boot/50-dragon-q8b.install \
     packaging/boot/91-dragon-q8b.install \
@@ -87,6 +88,7 @@ bash -n scripts/*.sh \
 shellcheck scripts/*.sh \
     packaging/boot/dragon-q8b-bt-address \
     packaging/boot/dragon-q8b-refresh-boot \
+    packaging/boot/dragon-q8b-cmdline \
     packaging/boot/dragon-q8b-thermal \
     packaging/boot/50-dragon-q8b.install \
     packaging/boot/91-dragon-q8b.install \
@@ -107,8 +109,53 @@ test "$(bash scripts/detect-affected-packages.sh --files vendor/armbian/sc8280xp
 test "$(bash scripts/detect-affected-packages.sh --files config/firmware.files)" = "dragon-q8b-firmware"
 test "$(bash scripts/detect-affected-packages.sh --files config/kernel-local)" = "kernel dragon-q8b-kernel"
 test "$(bash scripts/detect-affected-packages.sh --files config/overlays.list)" = "dragon-q8b-overlays"
-test "$(bash scripts/detect-affected-packages.sh --files config/cmdline.d/50-dragon-q8b.conf)" = "dragon-q8b-boot"
+test "$(bash scripts/detect-affected-packages.sh --files config/cmdline.tokens)" = "dragon-q8b-boot"
+test "$(bash scripts/detect-affected-packages.sh --files packaging/kernel-meta/dragon-q8b-kernel.spec)" = "kernel dragon-q8b-kernel"
+test "$(bash scripts/detect-affected-packages.sh --packages dragon-q8b-kernel)" = "kernel dragon-q8b-kernel"
+test "$(bash scripts/detect-affected-packages.sh --packages non-kernel)" = "dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays dragon-q8b-alsa-ucm fastrpc dragon-q8b-qnn dragon-q8b-support"
 test "$(bash scripts/detect-affected-packages.sh --files scripts/qairt-catalog.sh)" = "dragon-q8b-qnn"
+
+# The Q8B schematic drives the fan-control input through an inverting Q20
+# open-drain stage. Keep the GPIO active-high at Q20's gate, compensate at the
+# PWM consumer, and favor Q20-off/pulled-high while idle or shutting down.
+fan_overlay=packaging/overlays/sc8280xp-radxa-dragon-q8b-pwm-fan.dtso
+grep -q '#include <dt-bindings/pwm/pwm.h>' "$fan_overlay"
+grep -Eq 'bias-pull-down;' "$fan_overlay"
+grep -Eq 'gpios = <&tlmm 119 GPIO_ACTIVE_HIGH>;' "$fan_overlay"
+grep -Eq 'pwms = <&fan_pwm 0 40000 PWM_POLARITY_INVERTED>;' "$fan_overlay"
+grep -Eq 'fan-shutdown-percent = <100>;' "$fan_overlay"
+
+cmdline_tokens=$(mktemp)
+cmdline_file=$(mktemp)
+cmdline_owned=$(mktemp -u)
+printf 'clk_ignore_unused\n' > "$cmdline_tokens"
+printf 'root=UUID=test quiet' > "$cmdline_file"
+test "$(wc -c < "$cmdline_file")" -eq 20
+DRAGON_Q8B_TOKENS_FILE="$cmdline_tokens" \
+DRAGON_Q8B_CMDLINE_FILE="$cmdline_file" \
+DRAGON_Q8B_OWNED_FILE="$cmdline_owned" \
+    bash packaging/boot/dragon-q8b-cmdline apply
+test "$(cat "$cmdline_file")" = "root=UUID=test quiet clk_ignore_unused"
+test "$(cat "$cmdline_owned")" = "clk_ignore_unused"
+DRAGON_Q8B_TOKENS_FILE="$cmdline_tokens" \
+DRAGON_Q8B_CMDLINE_FILE="$cmdline_file" \
+DRAGON_Q8B_OWNED_FILE="$cmdline_owned" \
+    bash packaging/boot/dragon-q8b-cmdline remove
+test "$(cat "$cmdline_file")" = "root=UUID=test quiet"
+test ! -e "$cmdline_owned"
+printf 'root=UUID=test clk_ignore_unused\n' > "$cmdline_file"
+DRAGON_Q8B_TOKENS_FILE="$cmdline_tokens" \
+DRAGON_Q8B_CMDLINE_FILE="$cmdline_file" \
+DRAGON_Q8B_OWNED_FILE="$cmdline_owned" \
+    bash packaging/boot/dragon-q8b-cmdline apply
+test "$(cat "$cmdline_file")" = "root=UUID=test clk_ignore_unused"
+test ! -e "$cmdline_owned"
+DRAGON_Q8B_TOKENS_FILE="$cmdline_tokens" \
+DRAGON_Q8B_CMDLINE_FILE="$cmdline_file" \
+DRAGON_Q8B_OWNED_FILE="$cmdline_owned" \
+    bash packaging/boot/dragon-q8b-cmdline remove
+test "$(cat "$cmdline_file")" = "root=UUID=test clk_ignore_unused"
+rm -f "$cmdline_tokens" "$cmdline_file" "$cmdline_owned"
 
 qnn_pkg_conf=$(mktemp)
 qnn_local_conf=$(mktemp)
@@ -146,8 +193,16 @@ fi
 
 cp packaging/boot/dragon-q8b-boot.spec "$smoke_rpm_topdir/SPECS/"
 find packaging/boot -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;
-cp config/cmdline.d/50-dragon-q8b.conf "$smoke_rpm_topdir/SOURCES/cmdline-50-dragon-q8b.conf"
+cp config/cmdline.tokens "$smoke_rpm_topdir/SOURCES/cmdline.tokens"
 rpmbuild -bb --define "_topdir $smoke_rpm_topdir" "$smoke_rpm_topdir/SPECS/dragon-q8b-boot.spec" >/dev/null
+boot_rpm=$(find "$smoke_rpm_topdir/RPMS" -type f -name 'dragon-q8b-boot-*.rpm' ! -name '*.src.rpm' -print -quit)
+[[ -n "$boot_rpm" ]]
+rpm -qpl "$boot_rpm" | grep -Fxq '/usr/lib/dragon-q8b/cmdline.tokens'
+rpm -qpl "$boot_rpm" | grep -Fxq '/usr/libexec/dragon-q8b-cmdline'
+if rpm -qpl "$boot_rpm" | grep -Eq 'kernel/cmdline(\.d)?'; then
+    echo "boot RPM must not ship /usr/lib/kernel/cmdline or cmdline.d" >&2
+    exit 1
+fi
 
 cp packaging/alsa/dragon-q8b-alsa-ucm.spec "$smoke_rpm_topdir/SPECS/"
 find packaging/alsa -maxdepth 1 -type f ! -name '*.spec' -exec cp {} "$smoke_rpm_topdir/SOURCES/" \;

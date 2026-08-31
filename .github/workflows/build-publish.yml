@@ -48,8 +48,9 @@ jobs:
             bash coreutils git git-lfs findutils grep sed awk \
             fedpkg fedora-packager \
             rpm-build rpmdevtools kernel-rpm-macros python3-devel \
-            make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck \
+            make gcc flex bison dtc binutils openssl tar gzip xz ShellCheck patch \
             autoconf automake libtool libyaml-devel libbsd-devel systemd-rpm-macros \
+            kernel-devel \
             qemu-system-aarch64-core edk2-aarch64 genisoimage qemu-img
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,6 +69,7 @@ jobs:
           shellcheck scripts/*.sh \
             packaging/boot/dragon-q8b-bt-address \
             packaging/boot/dragon-q8b-refresh-boot \
+            packaging/boot/dragon-q8b-cmdline \
             packaging/boot/dragon-q8b-thermal \
             packaging/boot/50-dragon-q8b.install \
             packaging/boot/91-dragon-q8b.install \
@@ -182,20 +184,27 @@ jobs:
             --project "$COPR_OWNER/$staging_project" \
             --chroot "fedora-${FEDORA_RELEASE}-aarch64" \
             --srpm-dir "$RUNNER_TEMP/srpms"
-      - name: Run Fedora QEMU E2E validation against staging build
-        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
-        env:
-          COPR_OWNER: ${{ secrets.COPR_OWNER }}
+      - name: Build QEMU E2E binary RPMs
+        if: env.EVENT_NAME != 'pull_request'
         run: |
-          staging_project="dragon-q8b-staging"
+          mkdir -p "$RUNNER_TEMP/e2e-srpms" "$RUNNER_TEMP/e2e-rpms"
+          bash scripts/build-srpms.sh \
+            --release "$FEDORA_RELEASE" \
+            --output "$RUNNER_TEMP/e2e-srpms" \
+            --binary-output "$RUNNER_TEMP/e2e-rpms" \
+            --packages "dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays dragon-q8b-alsa-ucm fastrpc dragon-q8b-qnn dragon-q8b-support"
+          ls -l "$RUNNER_TEMP/e2e-rpms"
+      - name: Run Fedora QEMU E2E validation
+        if: env.EVENT_NAME != 'pull_request'
+        run: |
           mkdir -p "$RUNNER_TEMP/qemu-e2e"
           bash scripts/test-e2e-qemu.sh \
-            --copr "$COPR_OWNER/$staging_project" \
+            --rpm-dir "$RUNNER_TEMP/e2e-rpms" \
             --release "$FEDORA_RELEASE" \
             --output "$RUNNER_TEMP/qemu-e2e" \
             --timeout 1200
       - name: Upload QEMU E2E test logs
-        if: always() && env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
+        if: always() && env.EVENT_NAME != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: qemu-e2e-logs-${{ github.run_id }}

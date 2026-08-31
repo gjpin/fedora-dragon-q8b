@@ -10,6 +10,6 @@ KERNEL_VERSION=${2:-}
 [[ -n "$KERNEL_VERSION" ]] || exit 0
 
 if [[ -x /usr/libexec/dragon-q8b-refresh-boot ]]; then
-    /usr/libexec/dragon-q8b-refresh-boot --kernel-version "$KERNEL_VERSION" || :
+    /usr/libexec/dragon-q8b-refresh-boot --best-effort --kernel-version "$KERNEL_VERSION" || :
 fi
 exit 0

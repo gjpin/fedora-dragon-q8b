@@ -6,32 +6,82 @@
  * Enable with: dragon-q8b-overlay enable pwm-fan
  * then reboot so kernel-install can merge this overlay into the Q8B DTB.
  *
- * FIXME: The Q8B board DTS has no pwm/fan node. The PWM phandle and pinmux
- * for the dedicated fan connector could not be confirmed from the Radxa
- * schematic, vendor DTS, or kernel sources. Do not invent a pin. Fill in
- * `pwms` (and any required pinctrl) from hardware documentation before
- * expecting a pwm-fan cooling device to bind.
+ * Schematic v1.30 connects FAN_PWM (TLMM GPIO119) through R473 to the gate
+ * of Q20. Q20 pulls J6 pin 3 low; R452 pulls that fan-control pin up to 5 V
+ * when Q20 is off. There is no hardware PWM on the connector, so this uses
+ * pwm-gpio. PWM_POLARITY_INVERTED compensates for Q20: duty 255 releases
+ * Q20 and leaves J6 pin 3 high, while duty 0 pulls it low. A pinctrl pull-down
+ * also keeps Q20 off before/after active PWM control.
  *
- * SC8280XP PWM on this SoC is typically the PM8350C LPG (`pmc8280c_lpg` in
- * sc8280xp-pmics.dtsi), but the fan-header channel/pin is unverified.
+ * This models the pull-up/open-drain circuit's apparent fail-safe intent.
+ * The 25 kHz period, RPM curve, starting duty, and high=input-full-speed
+ * behavior still require validation with the physical 6845B fan.
  */
 
 /dts-v1/;
 /plugin/;
 
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pwm/pwm.h>
+#include <dt-bindings/thermal/thermal.h>
+
 / {
 	compatible = "radxa,dragon-q8b";
 
 	fragment@0 {
+		target = <&tlmm>;
+		__overlay__ {
+			fan_pwm_pins: fan-pwm-state {
+				pins = "gpio119";
+				function = "gpio";
+				drive-strength = <2>;
+				/* Q20 off lets R452 pull the fan-control input high. */
+				bias-pull-down;
+			};
+		};
+	};
+
+	fragment@1 {
 		target-path = "/";
 		__overlay__ {
-			/* Bound name is type "pwm-fan" once pwms is valid and status=okay. */
+			fan_pwm: pwm-gpio-fan {
+				compatible = "pwm-gpio";
+				#pwm-cells = <3>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&fan_pwm_pins>;
+				/* GPIO high turns on the low-side pull-down Q20. */
+				gpios = <&tlmm 119 GPIO_ACTIVE_HIGH>;
+			};
+
 			fan0: pwm-fan {
 				compatible = "pwm-fan";
 				#cooling-cells = <2>;
 				cooling-levels = <0 64 128 192 255>;
-				status = "disabled";
-				/* FIXME: pwms = <&confirmed_pwm_phandle channel period_ns>; */
+				/* 25 kHz; invert Q20 so higher duty means more cooling. */
+				pwms = <&fan_pwm 0 40000 PWM_POLARITY_INVERTED>;
+				/* Keep the inferred full-speed state through driver shutdown. */
+				fan-shutdown-percent = <100>;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@2 {
+		target-path = "/thermal-zones/vbat-thermal/cooling-maps";
+		__overlay__ {
+			map-fan {
+				trip = <&vbat_alert0>;
+				cooling-device = <&fan0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/thermal-zones/pmc8280c-thermal/cooling-maps";
+		__overlay__ {
+			map-fan {
+				trip = <&pmc8280c_alert0>;
+				cooling-device = <&fan0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
 			};
 		};
 	};

@@ -10,18 +10,18 @@ board. Its relevant platform contract is:
 
 | Area | Radxa OS basis | Fedora implementation |
 | --- | --- | --- |
-| Boot | UEFI/systemd-boot flow and board-specific DTB | Fedora kernel DTB plus `dragon-q8b-boot` (`cmdline.d`, kernel-install `fdtoverlay` merge, BLS `devicetree`, grubby fallback) |
+| Boot | UEFI/systemd-boot flow and board-specific DTB | Fedora kernel DTB plus `dragon-q8b-boot` (append-only `clk_ignore_unused` via grubby/BLS, kernel-install `fdtoverlay` merge, BLS `devicetree`) |
 | Base DT | `sc8280xp-radxa-dragon-q8b.dts` from Radxa's kernel | The pinned Radxa DTS is inserted verbatim into Fedora's ARM64 DTB build; Armbian never supplies the board DTS |
 | Remote processors | SC8280XP ADSP/CDSP/SLPI/VSS/TrustZone hand-off | Radxa firmware package plus Fedora `qcom-firmware`, with the required files copied into initramfs |
 | Audio | WCD9385 SoundWire codec and Radxa UCM profiles | Fedora kernel SoundWire/SC8280XP support, Q8B UCM files under `/etc/alsa/ucm2`, and a conf.d DMI match. Fedora's SoC `sc8280xp.conf` is not replaced. |
 | Display/media | Adreno display pipeline, DP/HDMI bridge, Iris/VPU firmware | DRM/MSM, DP, bridge, Iris/Venus configuration and firmware |
 | Storage | UFS, NVMe, and microSD | Fedora UFS, PCIe, MMC, and storage drivers built into or shipped by the kernel |
 | Ethernet | QPS615/TC9564 PCIe switch and two 2.5GbE ports | Q8B DT plus TC956X, XPCS, stmmac, and QCA808x changes from the pinned queue |
-| Expansion | Q8B GPIO/I²C/SPI/UART muxes and optional 6845B fan | Radxa overlays plus local `pwm-fan` overlay; enable with `dragon-q8b-overlay` |
+| Expansion | Q8B GPIO/I²C/SPI/UART muxes and optional 6845B fan | Radxa overlays plus local `pwm-fan` overlay (schematic GPIO119 `pwm-gpio`; Q20 inversion compensated; pulled-high fail-safe intent modeled; period/RPM response still unvalidated); enable with `dragon-q8b-overlay` |
 | Wi-Fi/Bluetooth | Qualcomm radio firmware and M.2 E-key controller setup (no modem/`rmtfs`) | Fedora firmware, `bluez`, and a deterministic locally-administered BT address via `dragon-q8b-bt.service` |
 | NPU / FastRPC | Hexagon DSP FastRPC runtime | Qualcomm FastRPC 1.0.6 (`fastrpc`) plus `dragon-q8b-fastrpc` DSP search paths; upstream udev 0640 + group `fastrpc` |
 | AI Acceleration | Qualcomm QAIRT/QNN SDK | `dragon-q8b-qnn` (Recommends) downloads the checksum-pinned Software Center Community Edition after explicit license acceptance and validates the SC8280XP HTP v68 backend |
-| Thermal & Cooling | `rsetup` thermal governor modes (`step_wise`, `power_allocator`) | Default `power_allocator` (fanless). Optional Heatsink 6845B: `dragon-q8b-overlay enable pwm-fan` then reboot; `step_wise` only on zones that list a `pwm-fan` cooling device. Packaged `/usr/lib/tmpfiles.d/dragon-q8b-thermal.conf` plus a oneshot apply after sysfs bind. |
+| Thermal & Cooling | `rsetup` thermal governor modes (`step_wise`, `power_allocator`) | Default `power_allocator` (fanless). Optional Heatsink 6845B overlay uses schematic GPIO119; `step_wise` only on zones that list a `pwm-fan` cooling device. Packaged `/usr/lib/tmpfiles.d/dragon-q8b-thermal.conf` plus a oneshot apply after sysfs bind. |
 
 Radxa's OS build is product/SoC oriented: it combines a board kernel, a
 firmware package, overlays, ALSA UCM, FastRPC runtime, and a UEFI boot configuration. Fedora
@@ -53,8 +53,8 @@ and only the Q8B profiles plus conf.d DMI files are packaged.
    so rebuilt content cannot collide with an older COPR NVR. Production COPR is
    a manual `workflow_dispatch` promote, not an automatic publish.
 6. A maintainer must validate the physical board before promoting staging to
-   the production COPR project. The default kernel command line is
-   `clk_ignore_unused` only.
+   the production COPR project. Board-owned kernel arguments such as
+   `clk_ignore_unused` are appended to Fedora's existing command line.
 
 The queue is deliberately applied after Fedora's own kernel patch. A Fedora
 kernel refresh that conflicts with the Q8B queue fails the build for review;

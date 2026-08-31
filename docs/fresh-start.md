@@ -197,9 +197,15 @@ Do not use `--force` on a real board unless you understand which hardware or
 release checks it bypasses. The script does not flash SPI/UEFI firmware,
 remove old kernels, upgrade the whole system, or reboot automatically.
 
-There is no modem/`rmtfs` stack (Wi-Fi/BT is M.2 E-key only). The PWM fan is
-optional: `sudo dragon-q8b-overlay enable pwm-fan` then reboot. Default cooling
-is `power_allocator`; the default kernel command line is `clk_ignore_unused`.
+There is no modem/`rmtfs` stack (Wi-Fi/BT is M.2 E-key only). The optional
+Heatsink 6845B PWM fan uses schematic GPIO119 (`pwm-gpio`):
+`sudo dragon-q8b-overlay enable pwm-fan` then reboot. The overlay compensates
+for the schematic Q20 open-drain inversion and favors J6's pulled-high,
+inferred full-speed state when PWM control is inactive or shutting down. The
+25 kHz period, RPM curve, starting duty, and inferred high=input-full-speed
+behavior are not hardware-validated. Default cooling is `power_allocator`.
+Board-owned kernel arguments such as `clk_ignore_unused` are appended to
+Fedora's command line.
 
 ## 5. Validate the hardware
 

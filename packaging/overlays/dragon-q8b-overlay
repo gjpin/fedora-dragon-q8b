@@ -14,7 +14,8 @@ so fdtoverlay can merge them into the Q8B DTB.
 Names may be overlay basenames (without .dtbo) or short aliases such as
 pwm-fan for sc8280xp-radxa-dragon-q8b-pwm-fan.
 
-Heatsink 6845B: dragon-q8b-overlay enable pwm-fan then reboot.
+Heatsink 6845B PWM fan (GPIO119/Q20 modeled; period/RPM unvalidated):
+dragon-q8b-overlay enable pwm-fan then reboot.
 EOF
 }
 
@@ -50,7 +51,7 @@ write_enabled() {
     tmp=$(mktemp)
     {
         printf '%s\n' '# Enabled Dragon Q8B device-tree overlays (basenames without .dtbo).'
-        printf '%s\n' '# Managed by dragon-q8b-overlay. Heatsink 6845B: enable pwm-fan then reboot.'
+        printf '%s\n' '# Managed by dragon-q8b-overlay. Optional 6845B fan: enable pwm-fan then reboot.'
         printf '%s\n' "$@"
     } > "$tmp"
     chmod 0644 "$tmp"
@@ -75,10 +76,10 @@ resolve_name() {
 
 refresh_kernels() {
     if [[ -x /usr/libexec/dragon-q8b-refresh-boot ]]; then
-        /usr/libexec/dragon-q8b-refresh-boot || die "kernel-install refresh failed"
-        return 0
+        /usr/libexec/dragon-q8b-refresh-boot
+        return $?
     fi
-    die "dragon-q8b-refresh-boot is not installed"
+    return 1
 }
 
 case "$command" in
@@ -116,8 +117,14 @@ case "$command" in
         while IFS= read -r name; do
             [[ -n "${selected[$name]:-}" ]] && names+=("$name")
         done < <(list_available)
+        snapshot=$(mktemp)
+        cp -a "$conf" "$snapshot"
         write_enabled "${names[@]}"
-        refresh_kernels
+        if ! refresh_kernels; then
+            mv "$snapshot" "$conf"
+            die "overlay merge failed; restored $conf"
+        fi
+        rm -f "$snapshot"
         log "updated $conf; reboot to load the merged DTB"
         ;;
 esac

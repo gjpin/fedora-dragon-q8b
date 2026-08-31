@@ -41,6 +41,7 @@ jobs:
           shellcheck scripts/*.sh \
             packaging/boot/dragon-q8b-bt-address \
             packaging/boot/dragon-q8b-refresh-boot \
+            packaging/boot/dragon-q8b-cmdline \
             packaging/boot/dragon-q8b-thermal \
             packaging/boot/50-dragon-q8b.install \
             packaging/boot/91-dragon-q8b.install \

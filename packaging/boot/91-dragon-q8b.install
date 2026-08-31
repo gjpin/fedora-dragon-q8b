@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# kernel-install plugin: merge Q8B overlays into the board DTB after the BLS
-# entry exists (90-loaderentry.install). Same helper as 50-dragon-q8b.install.
+# kernel-install plugin: merge Q8B overlays after the BLS entry exists
+# (90-loaderentry.install) and append board-owned cmdline tokens.
 set -Eeuo pipefail
 
 COMMAND=${1:-}
@@ -10,6 +10,9 @@ KERNEL_VERSION=${2:-}
 [[ -n "$KERNEL_VERSION" ]] || exit 0
 
 if [[ -x /usr/libexec/dragon-q8b-refresh-boot ]]; then
-    /usr/libexec/dragon-q8b-refresh-boot --kernel-version "$KERNEL_VERSION" || :
+    /usr/libexec/dragon-q8b-refresh-boot --best-effort --kernel-version "$KERNEL_VERSION" || :
+fi
+if [[ -x /usr/libexec/dragon-q8b-cmdline ]]; then
+    /usr/libexec/dragon-q8b-cmdline apply --kernel-version "$KERNEL_VERSION" || :
 fi
 exit 0

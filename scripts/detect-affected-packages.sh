@@ -11,7 +11,7 @@ Options:
   --base REF            Base git reference/commit to diff against
   --head REF            Head git reference/commit to diff against (default: HEAD)
   --files FILE...       Explicit list of changed file paths
-  --packages LIST       Explicit list or comma/space-separated string of packages (e.g. "boot,fastrpc", "all", "none", "auto")
+  --packages LIST       Explicit list or comma/space-separated string of packages (e.g. "boot,fastrpc", "all", "non-kernel", "none", "auto")
   --all                 Select all packages
   --format FORMAT       Output format: "space" (default), "newline", or "json"
   -h, --help            Show this help message
@@ -117,6 +117,11 @@ if [[ ${#explicit_packages[@]} -gt 0 ]]; then
         if [[ "$item" == "all" ]]; then
             mode_all=1
             break
+        elif [[ "$item" == "non-kernel" ]]; then
+            for p in "${ALL_PACKAGES[@]}"; do
+                [[ "$p" == kernel || "$p" == dragon-q8b-kernel ]] && continue
+                select_pkg "$p"
+            done
         elif [[ "$item" == "none" ]]; then
             mode_none=1
             selected_packages=()
@@ -179,7 +184,7 @@ if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 && "$mode_none" -eq 0 
                 packaging/firmware/*|vendor/radxa/firmware/*|config/firmware.files)
                     select_pkg dragon-q8b-firmware
                     ;;
-                packaging/boot/*|config/cmdline.d/*)
+                packaging/boot/*|config/cmdline.tokens)
                     select_pkg dragon-q8b-boot
                     ;;
                 packaging/overlays/*|vendor/radxa/overlays/*|config/overlays.list)
@@ -242,9 +247,14 @@ if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 && "$mode_none" -eq 0 
     fi
 fi
 
-# If kernel is selected, dragon-q8b-kernel must also be selected
-if [[ -n "${selected_packages[kernel]:-}" ]]; then
-    selected_packages["dragon-q8b-kernel"]=1
+# Kernel RPM and kernel-meta NVR must be published from the same prepared spec.
+if [[ "$mode_none" -eq 0 ]]; then
+    if [[ -n "${selected_packages[kernel]:-}" ]]; then
+        selected_packages["dragon-q8b-kernel"]=1
+    fi
+    if [[ -n "${selected_packages[dragon-q8b-kernel]:-}" ]]; then
+        selected_packages["kernel"]=1
+    fi
 fi
 
 result_packages=()

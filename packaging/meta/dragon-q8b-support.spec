@@ -51,18 +51,18 @@ kernels. There is no modem/rmtfs stack; Wi-Fi/BT is M.2 E-key only.
 install -Dpm0644 %{SOURCE0} %{buildroot}%{_presetdir}/50-dragon-q8b-support.preset
 
 %post
-%systemd_post pd-mapper.service
-
-%preun
-%systemd_preun pd-mapper.service
-
-%postun
-%systemd_postun_with_restart pd-mapper.service
+%systemd_post tqftpserv.service
 
 %files
 %{_presetdir}/50-dragon-q8b-support.preset
 
 %changelog
+* Mon Aug 31 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.1.0-4
+- Preset tqftpserv.service from this package after tqftpserv is already installed.
+
+* Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.1.0-3
+- Enable tqftpserv; Fedora qrtr provides pd-mapper and ships no pd-mapper.service.
+
 * Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.1.0-2
 - Require pd-mapper, recommend debug tools and QNN, enable pd-mapper.
 

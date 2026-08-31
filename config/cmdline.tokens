@@ -1,0 +1,14 @@
+# Board-owned kernel command-line tokens for Radxa Dragon Q8B.
+# dragon-q8b-cmdline appends these to Fedora's existing BLS options and,
+# when that file already exists, to /etc/kernel/cmdline. It never replaces
+# the rest of the command line and never creates /etc/kernel/cmdline.
+#
+# systemd kernel-install does not read cmdline.d drop-ins. Extra tokens for
+# a given machine should be added with grubby --args or by appending to
+# /etc/kernel/cmdline.
+#
+# Only clk_ignore_unused is applied by default. Hardware-tested extras:
+#   pd_ignore_unused
+#   arm64.nopauth
+#   efi=noruntime
+clk_ignore_unused

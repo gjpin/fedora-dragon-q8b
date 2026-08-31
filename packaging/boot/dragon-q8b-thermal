@@ -40,7 +40,7 @@ Examples:
   dragon-q8b-thermal -m power_allocator       # Switch to passive/fanless cooling mode
   dragon-q8b-thermal -m user_space -f 3       # Switch to manual control and set fan level
   dragon-q8b-thermal --menu                   # Open interactive rsetup-style menu
-  dragon-q8b-overlay enable pwm-fan           # Heatsink 6845B overlay, then reboot
+  dragon-q8b-overlay enable pwm-fan           # Optional 6845B overlay (GPIO119), then reboot
 EOF
 }
 
@@ -364,16 +364,21 @@ set_fan_speed() {
     local speed=$1
     require_root
 
-    local cdevs
+    local cdevs fans=()
     mapfile -t cdevs < <(get_cooling_devices)
-
-    if [[ ${#cdevs[@]} -eq 0 ]]; then
-        log_err "No cooling devices found in $SYSFS_THERMAL_DIR."
-        exit 1
-    fi
 
     for c in "${cdevs[@]}"; do
         [[ -n "$c" ]] || continue
+        [[ "$(cat "$c/type" 2>/dev/null || true)" == pwm-fan ]] || continue
+        fans+=("$c")
+    done
+
+    if [[ ${#fans[@]} -eq 0 ]]; then
+        log_err "No pwm-fan cooling device found. Enable the Heatsink 6845B overlay (dragon-q8b-overlay enable pwm-fan) and reboot."
+        exit 1
+    fi
+
+    for c in "${fans[@]}"; do
         local cid max_state
         cid=$(basename "$c")
         max_state=$(cat "$c/max_state" 2>/dev/null || echo "0")

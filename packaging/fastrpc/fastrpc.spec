@@ -73,17 +73,13 @@ install -Dpm0644 %{SOURCE2} %{buildroot}%{_sysconfdir}/profile.d/dragon-q8b-fast
 %sysusers_create_compat %{SOURCE1}
 
 %post
-%systemd_post adsprpcd.service adsprpcd_audiopd.service cdsprpcd.service \
-    cdsp1rpcd.service sdsprpcd.service gdsp0rpcd.service gdsp1rpcd.service
+%systemd_post adsprpcd.service adsprpcd_audiopd.service cdsprpcd.service cdsp1rpcd.service sdsprpcd.service gdsp0rpcd.service gdsp1rpcd.service
 
 %preun
-%systemd_preun adsprpcd.service adsprpcd_audiopd.service cdsprpcd.service \
-    cdsp1rpcd.service sdsprpcd.service gdsp0rpcd.service gdsp1rpcd.service
+%systemd_preun adsprpcd.service adsprpcd_audiopd.service cdsprpcd.service cdsp1rpcd.service sdsprpcd.service gdsp0rpcd.service gdsp1rpcd.service
 
 %postun
-%systemd_postun_with_restart adsprpcd.service adsprpcd_audiopd.service \
-    cdsprpcd.service cdsp1rpcd.service sdsprpcd.service \
-    gdsp0rpcd.service gdsp1rpcd.service
+%systemd_postun_with_restart adsprpcd.service adsprpcd_audiopd.service cdsprpcd.service cdsp1rpcd.service sdsprpcd.service gdsp0rpcd.service gdsp1rpcd.service
 
 %files
 %license LICENSE.txt
@@ -127,5 +123,8 @@ install -Dpm0644 %{SOURCE2} %{buildroot}%{_sysconfdir}/profile.d/dragon-q8b-fast
 %config(noreplace) %{_sysconfdir}/profile.d/dragon-q8b-fastrpc.sh
 
 %changelog
+* Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 1.0.6-2
+- Keep systemd scriptlets on one line so RPM %post is valid shell.
+
 * Sun Aug 30 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 1.0.6-1
 - Package Qualcomm FastRPC 1.0.6 with a Dragon Q8B config subpackage.

@@ -127,7 +127,7 @@ done
 
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || :
-    if systemctl list-unit-files pd-mapper.service >/dev/null 2>&1; then
+    if systemctl cat pd-mapper.service >/dev/null 2>&1; then
         systemctl enable pd-mapper.service || warn "could not enable pd-mapper.service"
     fi
     if systemctl list-unit-files dragon-q8b-bt.service >/dev/null 2>&1; then
