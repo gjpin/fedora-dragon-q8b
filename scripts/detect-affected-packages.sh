@@ -224,7 +224,7 @@ if [[ ${#selected_packages[@]} -eq 0 && "$mode_all" -eq 0 && "$mode_none" -eq 0 
                         if grep -Eq 'ALSA_UCM' <<< "$env_diff"; then select_pkg dragon-q8b-alsa-ucm; fi
                         if grep -Eq 'FASTRPC' <<< "$env_diff"; then select_pkg fastrpc; fi
                         if grep -Eq 'QAIRT' <<< "$env_diff"; then select_pkg dragon-q8b-qnn; fi
-                        if grep -Eq 'ARMBIAN|RADXA_KERNEL|FEDORA_RELEASE' <<< "$env_diff"; then
+                        if grep -Eq 'ARMBIAN|RADXA_KERNEL|FEDORA_RELEASE|FEDORA_KERNEL' <<< "$env_diff"; then
                             select_pkg kernel
                             select_pkg dragon-q8b-kernel
                         fi

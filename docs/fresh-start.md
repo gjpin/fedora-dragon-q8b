@@ -57,7 +57,9 @@ Check the downstream patch queue against Fedora's prepared kernel source:
   --output build/kernel/patch-status.tsv
 ```
 
-Build and validate the SRPMs:
+Build and validate the SRPMs. Packaging or spec changes are not complete until
+this sequence succeeds; CI runs the same gate, and COPR only publishes after
+it:
 
 ```shell
 ./scripts/build-srpms.sh \
@@ -135,10 +137,10 @@ COPR_OWNER  = your COPR username
 COPR_CONFIG = complete contents of ~/.config/copr
 ```
 
-You can trigger a build manually via **Actions → Build and publish Fedora Dragon Q8B packages → Run workflow**, or simply push to `main`.
+You can trigger a COPR publish via **Actions → Build and publish Fedora Dragon Q8B packages → Run workflow**. Path-filtered pushes to `main` and pull requests build and validate SRPMs (pushes also run QEMU E2E) but do not submit to COPR. The vendor refresh workflow commits pin updates (including Fedora `f44` kernel dist-git) to `main` and starts that same publish job.
 
-The workflow builds in a Fedora 44 container, runs Fedora QEMU aarch64 E2E
-validation (`scripts/test-e2e-qemu.sh`) against locally built RPMs, then
+The publish workflow builds in a Fedora 44 container, runs Fedora QEMU aarch64
+E2E validation (`scripts/test-e2e-qemu.sh`) against locally built RPMs, then
 submits the same SRPMs to `dragon-q8b`. QEMU is not a hardware substitute.
 
 You can also run the QEMU E2E test locally:

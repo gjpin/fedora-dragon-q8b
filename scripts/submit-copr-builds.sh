@@ -59,55 +59,79 @@ if [[ ${#srpms[@]} -eq 0 ]]; then
     exit 0
 fi
 
-# Check if a package is already built and succeeded in COPR
-is_built_in_copr() {
+# Print a COPR build id for this NVR/chroot if one exists in a non-failure
+# state. Used to skip duplicates and to recover when copr-cli created a build
+# but returned a non-JSON error page.
+existing_copr_build_id() {
     local name=$1
     local srpm_path=${srpms[$name]}
-    if [[ "$force" -eq 1 ]]; then
-        return 1
-    fi
+    local want_state=${2:-any}
 
-    python3 - "$project" "$chroot" "$srpm_path" <<'PYEOF' 2>/dev/null || return 1
+    python3 - "$project" "$chroot" "$srpm_path" "$want_state" <<'PYEOF' 2>/dev/null || true
 import sys
 import rpm
 
-owner, proj = sys.argv[1].split('/', 1)
+owner, proj = sys.argv[1].split("/", 1)
 chroot = sys.argv[2]
 srpm_path = sys.argv[3]
+want_state = sys.argv[4]
+failure = {"failed", "canceled"}
 
 ts = rpm.TransactionSet()
-with open(srpm_path, 'rb') as f:
+with open(srpm_path, "rb") as f:
     hdr = ts.hdrFromFdno(f.fileno())
 
 name = hdr[rpm.RPMTAG_NAME]
-version = hdr[rpm.RPMTAG_VERSION]
-release = hdr[rpm.RPMTAG_RELEASE]
-target_vr = f"{version}-{release}"
+target_vr = f"{hdr[rpm.RPMTAG_VERSION]}-{hdr[rpm.RPMTAG_RELEASE]}"
 
 try:
     from copr.v3 import Client
     client = Client.create_from_config_file()
     builds = client.build_proxy.get_list(ownername=owner, projectname=proj, packagename=name)
-    for b in builds:
-        b_vr = getattr(b, 'pkg_version', None)
-        if not b_vr and hasattr(b, 'source_package') and b.source_package:
-            b_vr = b.source_package.get('version')
-        if b_vr == target_vr and b.state == 'succeeded':
-            if hasattr(b, 'chroots') and b.chroots:
-                if chroot in b.chroots:
-                    sys.exit(0) # Found existing successful build
-            else:
-                sys.exit(0)
 except Exception:
-    pass
+    sys.exit(1)
 
-sys.exit(1) # Not built or error checking
+for b in builds:
+    b_vr = getattr(b, "pkg_version", None)
+    if not b_vr and getattr(b, "source_package", None):
+        source = b.source_package
+        b_vr = source.get("version") if isinstance(source, dict) else getattr(source, "version", None)
+    if b_vr != target_vr:
+        continue
+    if getattr(b, "chroots", None) and chroot not in b.chroots:
+        continue
+    if want_state == "succeeded":
+        if b.state == "succeeded":
+            print(b.id)
+            sys.exit(0)
+        continue
+    if b.state not in failure:
+        print(b.id)
+        sys.exit(0)
+sys.exit(1)
 PYEOF
+}
+
+is_built_in_copr() {
+    local name=$1
+    local build_id
+    if [[ "$force" -eq 1 ]]; then
+        return 1
+    fi
+    build_id=$(existing_copr_build_id "$name" succeeded)
+    [[ "$build_id" =~ ^[0-9]+$ ]]
+}
+
+record_build_id() {
+    local name=$1 build_id=$2
+    printf '%s=%s\n' "$name" "$build_id" >> "$srpm_dir/copr-builds.env"
+    printf '%s\n' "$build_id"
 }
 
 submit() {
     local name=$1
-    local output build_id
+    local output build_id status
+    local attempt=1 max_attempts=6 delay=5
     [[ -n "${srpms[$name]:-}" ]] || { echo "missing SRPM for $name" >&2; exit 1; }
 
     if is_built_in_copr "$name"; then
@@ -115,16 +139,43 @@ submit() {
         return 0
     fi
 
+    build_id=$(existing_copr_build_id "$name")
+    if [[ "$build_id" =~ ^[0-9]+$ ]]; then
+        echo "Package ${srpm_nvrs[$name]} already has COPR build $build_id in $project ($chroot). Reusing." >&2
+        record_build_id "$name" "$build_id"
+        return 0
+    fi
+
     echo "Submitting $name (${srpm_nvrs[$name]}) to $project ($chroot)" >&2
-    output=$($copr_cmd build --nowait --chroot "$chroot" "$project" "${srpms[$name]}")
-    printf '%s\n' "$output" >&2
-    build_id=$(printf '%s\n' "$output" | awk '/Created builds:/ {print $NF; exit}')
-    [[ "$build_id" =~ ^[0-9]+$ ]] || {
-        echo "could not parse COPR build id for $name" >&2
-        exit 1
-    }
-    printf '%s=%s\n' "$name" "$build_id" >> "$srpm_dir/copr-builds.env"
-    printf '%s\n' "$build_id"
+    while (( attempt <= max_attempts )); do
+        set +e
+        output=$($copr_cmd build --nowait --chroot "$chroot" "$project" "${srpms[$name]}" 2>&1)
+        status=$?
+        set -e
+        printf '%s\n' "$output" >&2
+        build_id=$(printf '%s\n' "$output" | awk '/Created builds:/ {print $NF; exit}')
+        if [[ "$status" -eq 0 && "$build_id" =~ ^[0-9]+$ ]]; then
+            record_build_id "$name" "$build_id"
+            return 0
+        fi
+
+        build_id=$(existing_copr_build_id "$name")
+        if [[ "$build_id" =~ ^[0-9]+$ ]]; then
+            echo "COPR accepted ${srpm_nvrs[$name]} as build $build_id after a non-JSON response." >&2
+            record_build_id "$name" "$build_id"
+            return 0
+        fi
+
+        echo "COPR submit failed for $name (attempt $attempt/$max_attempts, status ${status}). Retrying in ${delay}s." >&2
+        sleep "$delay"
+        delay=$(( delay * 2 ))
+        if (( delay > 60 )); then
+            delay=60
+        fi
+        attempt=$((attempt + 1))
+    done
+    echo "could not submit $name to COPR after $max_attempts attempts" >&2
+    exit 1
 }
 
 # Watch COPR builds until they finish. Fail as soon as one fails so a broken

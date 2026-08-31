@@ -120,6 +120,24 @@ for value_name in radxa_kernel_ref radxa_firmware_ref radxa_overlays_ref armbian
     }
 done
 
+fedora_kernel_repo=https://src.fedoraproject.org/rpms/kernel.git
+fedora_kernel_branch="f${FEDORA_RELEASE}"
+fedora_kernel_commit=$(resolve_ref "$fedora_kernel_repo" "refs/heads/${fedora_kernel_branch}")
+[[ -n "$fedora_kernel_commit" ]] || {
+    echo "could not resolve Fedora kernel ${fedora_kernel_branch}" >&2
+    exit 1
+}
+download \
+    "https://src.fedoraproject.org/rpms/kernel/raw/${fedora_kernel_commit}/f/kernel.spec" \
+    "$work_dir/kernel.spec"
+fedora_kernel_version=$(awk '/^%define specrpmversion / && !seen {print $3; seen=1}' \
+    "$work_dir/kernel.spec")
+[[ -n "$fedora_kernel_version" ]] || {
+    echo "could not parse Fedora kernel version from ${fedora_kernel_commit}" >&2
+    exit 1
+}
+echo "Fedora ${fedora_kernel_branch} kernel ${fedora_kernel_version} at ${fedora_kernel_commit}"
+
 radxa_dts="$stage/vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts"
 download \
     "https://raw.githubusercontent.com/radxa/kernel/${radxa_kernel_ref}/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts" \
@@ -238,6 +256,8 @@ replace_config "$config_file" ALSA_UCM_VERSION "$alsa_version"
 replace_config "$config_file" FASTRPC_REF "$fastrpc_ref"
 replace_config "$config_file" FASTRPC_TAG "$FASTRPC_TAG"
 replace_config "$config_file" FASTRPC_VERSION "$fastrpc_version"
+replace_config "$config_file" FEDORA_KERNEL_COMMIT "$fedora_kernel_commit"
+replace_config "$config_file" FEDORA_KERNEL_VERSION "$fedora_kernel_version"
 
 echo "Resolving latest QAIRT Community Edition from Qualcomm Software Center"
 qairt_version=$(qairt_catalog_latest)

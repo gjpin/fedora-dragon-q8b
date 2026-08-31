@@ -179,7 +179,7 @@ jobs:
           path: ${{ runner.temp }}/qemu-e2e
           if-no-files-found: ignore
       - name: Configure COPR credentials
-        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
+        if: github.event_name == 'workflow_dispatch' && steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_CONFIG_SECRET: ${{ secrets.COPR_CONFIG }}
         run: |
@@ -191,7 +191,7 @@ jobs:
           mkdir -p "$HOME/.config"
           printf '%s\n' "$COPR_CONFIG_SECRET" > "$HOME/.config/copr"
       - name: Publish to COPR
-        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
+        if: github.event_name == 'workflow_dispatch' && steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_OWNER: ${{ secrets.COPR_OWNER }}
         run: |

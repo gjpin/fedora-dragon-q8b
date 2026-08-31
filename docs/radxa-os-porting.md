@@ -33,11 +33,13 @@ and only the Q8B profiles plus conf.d DMI files are packaged.
 ## Kernel refresh flow
 
 1. `refresh-vendor.sh` resolves the latest Radxa kernel, firmware, overlay,
-   ALSA UCM, FastRPC, and Armbian refs. It downloads those project-specific
-   inputs, verifies them, commits them to `main`, and starts the publishing
-   workflow (QEMU E2E, then COPR if the tests pass).
-2. `prepare-kernel-source.sh` starts with Fedora's current kernel dist-git
-   source, inserts the vendored Radxa DTS verbatim, verifies the local Armbian
+   ALSA UCM, FastRPC, Armbian, and Fedora `f44` kernel dist-git refs. It
+   downloads the project-specific inputs, verifies them, pins
+   `FEDORA_KERNEL_COMMIT` / `FEDORA_KERNEL_VERSION`, commits to `main`, and
+   starts the publishing workflow (SRPM build, QEMU E2E, then COPR if the
+   tests pass).
+2. `prepare-kernel-source.sh` checks out the pinned Fedora kernel dist-git
+   commit, inserts the vendored Radxa DTS verbatim, verifies the local Armbian
    SC8280XP driver/SoC queue, and declares the result as Fedora `Patch3003`.
    The Armbian board-DTS patch is neither listed nor downloaded.
 3. `check-patch-redundancy.sh` prepares an unmodified Fedora source tree,
@@ -47,12 +49,13 @@ and only the Q8B profiles plus conf.d DMI files are packaged.
 4. The Fedora kernel config fragment enables the board's Qualcomm remoteproc,
    PCIe/UFS/MMC, SoundWire/audio, DRM/display, Iris/VPU, networking, GPIO,
    serial, I²C, and SPI paths.
-5. Pull-request CI builds source RPMs in Fedora 44 from Fedora's kernel source
-   plus the vendored Radxa/Armbian/Qualcomm inputs. After merge, the publishing
-   workflow runs QEMU E2E against locally built RPMs, then submits the same
-   SRPMs to COPR (`dragon-q8b`). The kernel build ID and support-package
-   release include the workflow run and attempt numbers, so rebuilt content
-   cannot collide with an older COPR NVR.
+5. Pull-request CI builds source RPMs in Fedora 44 from the pinned Fedora
+   kernel source plus the vendored Radxa/Armbian/Qualcomm inputs. Path-filtered
+   pushes to `main` also run QEMU E2E. COPR publish is a manual
+   `workflow_dispatch` or the vendor refresh workflow, after the SRPM gate
+   succeeds. The kernel build ID and support-package release include the
+   workflow run and attempt numbers, so rebuilt content cannot collide with an
+   older COPR NVR.
 6. A maintainer must still validate the physical board. Board-owned kernel
    arguments such as `clk_ignore_unused` are appended to Fedora's existing
    command line.

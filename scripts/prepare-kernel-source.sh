@@ -6,6 +6,7 @@ usage() {
 Usage: prepare-kernel-source.sh --output DIR [--release N]
 
 Prepare a Fedora kernel dist-git checkout for a Dragon Q8B build.
+Checks out the commit pinned by FEDORA_KERNEL_COMMIT in config/dragon-q8b.env.
 The output directory contains a Fedora kernel source tree with the pinned
 SC8280XP/Q8B patch series copied aside, kernel-local from config/kernel-local,
 and a separate DTS patch. The combined COPR patch is written later by
@@ -20,6 +21,8 @@ source "$repo_root/config/dragon-q8b.env"
 ARMBIAN_REF=${ARMBIAN_REF_OVERRIDE:-$ARMBIAN_REF}
 RADXA_KERNEL_REF=${RADXA_KERNEL_REF_OVERRIDE:-$RADXA_KERNEL_REF}
 RADXA_FIRMWARE_REF=${RADXA_FIRMWARE_REF_OVERRIDE:-$RADXA_FIRMWARE_REF}
+FEDORA_KERNEL_COMMIT=${FEDORA_KERNEL_COMMIT_OVERRIDE:-${FEDORA_KERNEL_COMMIT:-}}
+FEDORA_KERNEL_VERSION=${FEDORA_KERNEL_VERSION_OVERRIDE:-${FEDORA_KERNEL_VERSION:-}}
 UPDATE_PATCH_MANIFEST=${UPDATE_PATCH_MANIFEST:-0}
 default_build_id=dragonq8b.local
 if git -C "$repo_root" rev-parse --verify HEAD >/dev/null 2>&1; then
@@ -108,15 +111,36 @@ mkdir -p "$patch_dir"
 
 fedora_repo=https://src.fedoraproject.org/rpms/kernel.git
 fedora_branch="f${release}"
-echo "Cloning Fedora kernel dist-git ${fedora_branch}"
-git clone --depth=1 --branch "$fedora_branch" "$fedora_repo" "$kernel_dir"
+[[ "$release" == "$FEDORA_RELEASE" ]] || {
+    echo "Fedora kernel pin is for release $FEDORA_RELEASE, not $release" >&2
+    exit 2
+}
+[[ "$FEDORA_KERNEL_COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "FEDORA_KERNEL_COMMIT must be a 40-character SHA (got: ${FEDORA_KERNEL_COMMIT:-unset})" >&2
+    exit 2
+}
+echo "Fetching Fedora kernel dist-git ${fedora_branch} at ${FEDORA_KERNEL_COMMIT}"
+mkdir -p "$kernel_dir"
+git -C "$kernel_dir" init --quiet
+git -C "$kernel_dir" remote add origin "$fedora_repo"
+git -C "$kernel_dir" fetch --depth=1 origin "$FEDORA_KERNEL_COMMIT" || \
+    git -C "$kernel_dir" fetch origin "$FEDORA_KERNEL_COMMIT"
+git -C "$kernel_dir" checkout --quiet --detach FETCH_HEAD
 fedora_commit=$(git -C "$kernel_dir" rev-parse HEAD)
+[[ "$fedora_commit" == "$FEDORA_KERNEL_COMMIT" ]] || {
+    echo "Fedora kernel checkout $fedora_commit does not match pin $FEDORA_KERNEL_COMMIT" >&2
+    exit 1
+}
 fedora_kernel_version=$(awk '/^%define specrpmversion / && !seen {print $3; seen=1}' \
     "$kernel_dir/kernel.spec")
 [[ -n "$fedora_kernel_version" ]] || {
     echo "could not parse Fedora kernel version" >&2
     exit 1
 }
+if [[ -n "$FEDORA_KERNEL_VERSION" && "$fedora_kernel_version" != "$FEDORA_KERNEL_VERSION" ]]; then
+    echo "Fedora kernel version $fedora_kernel_version does not match pin $FEDORA_KERNEL_VERSION" >&2
+    exit 1
+fi
 
 manifest="$repo_root/config/armbian-sc8280xp-edge-patches.sha256"
 manifest_for_build="$output/armbian-sc8280xp-edge-patches.sha256"

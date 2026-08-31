@@ -5,10 +5,12 @@ Dragon Q8B packages. The Radxa and Qualcomm archives are large files tracked wit
 patches, metadata, and manifests remain ordinary Git files.
 
 `scripts/refresh-vendor.sh` is the only intended writer. It checks Radxa,
-Armbian, ALSA, Qualcomm FastRPC, and Qualcomm Software Center QAIRT revisions,
-downloads a staged snapshot of redistributable inputs, and updates
-`packaging/inputs.lock` only after all inputs pass validation. The QAIRT SDK
-zip is checksum-pinned but never vendored (Qualcomm license).
+Armbian, ALSA, Qualcomm FastRPC, Qualcomm Software Center QAIRT, and Fedora
+kernel dist-git revisions. It downloads a staged snapshot of redistributable
+inputs and updates `packaging/inputs.lock` only after all inputs pass
+validation. Fedora kernel is pinned in `config/dragon-q8b.env`, not this
+directory. The QAIRT SDK zip is checksum-pinned but never vendored (Qualcomm
+license).
 
 Builds consume this directory for project-specific inputs. Fedora's kernel
 dist-git source, base RPM repositories, build container, and GitHub Actions

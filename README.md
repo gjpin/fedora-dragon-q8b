@@ -36,14 +36,14 @@ Use `--force` only for packaging tests. A real board should identify itself as
 ## COPR and GitHub Actions
 
 The scheduled refresh workflow checks Radxa kernel, firmware, overlays, ALSA
-UCM, and Armbian revisions. When one changes, it downloads and checksums the
-corresponding vendor inputs, commits them to `main`, and starts the build
-workflow. That run executes QEMU E2E against locally built RPMs and, if the
+UCM, Armbian, and Fedora `f44` kernel dist-git revisions. When one changes, it
+updates the pins, commits them to `main`, and starts the build workflow. That
+run builds SRPMs, executes QEMU E2E against locally built RPMs, and, if the
 tests pass, submits the SRPMs to COPR (`dragon-q8b`).
 
 Large Radxa source archives use Git LFS. After cloning, run `git lfs install`
 and `git lfs pull` before building locally. The build uses the vendored
-Radxa/Armbian inputs, while Fedora supplies the kernel dist-git source,
+Radxa/Armbian inputs, while Fedora supplies the pinned kernel dist-git source,
 toolchain, and base RPM dependencies.
 
 Configure these repository secrets before scheduled publishing:
@@ -51,8 +51,11 @@ Configure these repository secrets before scheduled publishing:
 - `COPR_OWNER`: COPR user or group that owns the project.
 - `COPR_CONFIG`: the complete `~/.config/copr` file contents for `copr-cli`.
 
-Automatic builds on `main` run QEMU E2E against locally built RPMs, then submit
-the same SRPMs to COPR (`dragon-q8b`). QEMU is not a substitute for hardware.
+Path-filtered pushes and pull requests build and validate source RPMs in a
+Fedora container. Pushes to `main` also run QEMU E2E. COPR publish happens only
+when a maintainer runs **Build and publish Fedora Dragon Q8B packages** or when
+the vendor refresh workflow starts that job. QEMU is not a substitute for
+hardware.
 
 There is no modem/`rmtfs` stack. Wi-Fi and Bluetooth use the M.2 E-key slot.
 The optional Heatsink 6845B PWM fan is driven from schematic v1.30 FAN_PWM
@@ -97,6 +100,9 @@ The runner automatically selects native hardware acceleration (`-accel hvf` on m
 - **Thermal & Fan Cooling**: Validates `dragon-q8b-thermal`, default `power_allocator`, packaged tmpfiles, and overlay-gated `step_wise` when a `pwm-fan` cooling device exists. QEMU does not bind the fan.
 
 ## Local Fedora build
+
+Packaging or spec changes are not complete until this Fedora SRPM sequence
+succeeds. CI enforces the same gate; COPR only publishes after it.
 
 Run these commands in Fedora or a Fedora container with `fedpkg`,
 `rpm-build`, `rpmdevtools`, `kernel-rpm-macros`, `python3-devel`, `make`,
