@@ -8,7 +8,7 @@ Usage: bootstrap-fedora-dragon-q8b.sh [options]
 Install Fedora and COPR support for a Radxa Dragon Q8B.
 
 Options:
-  --copr OWNER/PROJECT       Override the production COPR repository
+  --copr OWNER/PROJECT       Override the COPR repository
   --force                    Continue past board/release detection failures
   --skip-dracut              Skip full initramfs regeneration (recommended for test VMs)
   --allow-unsigned-secure-boot

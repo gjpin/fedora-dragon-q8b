@@ -22,11 +22,6 @@ on:
         description: Packages to build (auto, all, none, or comma/space-separated list)
         required: false
         default: auto
-      promote_to_production:
-        description: After staging E2E, submit the same SRPMs to production COPR (dragon-q8b)
-        type: boolean
-        required: false
-        default: false
 
 permissions:
   contents: read
@@ -157,33 +152,6 @@ jobs:
             ${{ runner.temp }}/prepared-kernel/patch-status.tsv
             ${{ runner.temp }}/prepared-kernel/armbian-sc8280xp-edge-patches.sha256
           if-no-files-found: ignore
-      - name: Configure COPR credentials
-        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
-        env:
-          COPR_CONFIG_SECRET: ${{ secrets.COPR_CONFIG }}
-        run: |
-          test -n "$COPR_CONFIG_SECRET" || {
-            echo 'COPR_CONFIG GitHub secret is required for scheduled/manual publishing' >&2
-            exit 1
-          }
-          umask 077
-          mkdir -p "$HOME/.config"
-          printf '%s\n' "$COPR_CONFIG_SECRET" > "$HOME/.config/copr"
-      - name: Publish to staging COPR project
-        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
-        env:
-          COPR_OWNER: ${{ secrets.COPR_OWNER }}
-        run: |
-          test -n "$COPR_OWNER" || {
-            echo 'COPR_OWNER GitHub secret is required for scheduled/manual publishing' >&2
-            exit 1
-          }
-          staging_project="dragon-q8b-staging"
-          dnf -y install copr-cli python3-copr
-          bash scripts/submit-copr-builds.sh \
-            --project "$COPR_OWNER/$staging_project" \
-            --chroot "fedora-${FEDORA_RELEASE}-aarch64" \
-            --srpm-dir "$RUNNER_TEMP/srpms"
       - name: Build QEMU E2E binary RPMs
         if: env.EVENT_NAME != 'pull_request'
         run: |
@@ -210,17 +178,29 @@ jobs:
           name: qemu-e2e-logs-${{ github.run_id }}
           path: ${{ runner.temp }}/qemu-e2e
           if-no-files-found: ignore
-      - name: Publish to production COPR (manual promote only)
-        if: >-
-          github.event_name == 'workflow_dispatch' &&
-          github.event.inputs.promote_to_production == 'true' &&
-          steps.detect_packages.outputs.has_changes == 'true'
+      - name: Configure COPR credentials
+        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
+        env:
+          COPR_CONFIG_SECRET: ${{ secrets.COPR_CONFIG }}
+        run: |
+          test -n "$COPR_CONFIG_SECRET" || {
+            echo 'COPR_CONFIG GitHub secret is required for publishing' >&2
+            exit 1
+          }
+          umask 077
+          mkdir -p "$HOME/.config"
+          printf '%s\n' "$COPR_CONFIG_SECRET" > "$HOME/.config/copr"
+      - name: Publish to COPR
+        if: env.EVENT_NAME != 'pull_request' && steps.detect_packages.outputs.has_changes == 'true'
         env:
           COPR_OWNER: ${{ secrets.COPR_OWNER }}
         run: |
-          prod_project="dragon-q8b"
-          echo "Promoting packages to production COPR project: $COPR_OWNER/$prod_project"
+          test -n "$COPR_OWNER" || {
+            echo 'COPR_OWNER GitHub secret is required for publishing' >&2
+            exit 1
+          }
+          dnf -y install copr-cli python3-copr
           bash scripts/submit-copr-builds.sh \
-            --project "$COPR_OWNER/$prod_project" \
+            --project "$COPR_OWNER/dragon-q8b" \
             --chroot "fedora-${FEDORA_RELEASE}-aarch64" \
             --srpm-dir "$RUNNER_TEMP/srpms"

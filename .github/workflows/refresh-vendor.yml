@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
   pull-requests: write
 
 concurrency:
@@ -33,9 +34,8 @@ jobs:
           git -C "$repo_root" lfs pull
       - name: Refresh and validate vendored inputs
         run: |
-          branch='bot/vendor-refresh'
           git fetch origin main
-          git switch -C "$branch" origin/main
+          git switch -C main origin/main
           bash scripts/refresh-vendor.sh --output "$RUNNER_TEMP/current-inputs.env"
           bash scripts/validate-vendor.sh
           shellcheck scripts/*.sh \
@@ -47,11 +47,10 @@ jobs:
             packaging/boot/91-dragon-q8b.install \
             packaging/overlays/dragon-q8b-overlay
           git diff --check
-      - name: Open or update vendor refresh pull request
+      - name: Commit vendor refresh and start build-publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          branch='bot/vendor-refresh'
           if git status --short --untracked-files=all -- \
               vendor config/dragon-q8b.env \
               config/armbian-sc8280xp-edge-patches.sha256 packaging/inputs.lock | \
@@ -61,13 +60,15 @@ jobs:
             git add vendor config/dragon-q8b.env \
               config/armbian-sc8280xp-edge-patches.sha256 packaging/inputs.lock
             git commit -m 'chore: refresh vendored Dragon Q8B inputs'
-            git push --force-with-lease origin "HEAD:$branch"
-            gh pr create \
-              --base main \
-              --head "$branch" \
-              --title 'chore: refresh vendored Dragon Q8B inputs' \
-              --body 'Generated from the current Radxa, Armbian, ALSA, FastRPC, and Qualcomm Software Center QAIRT inputs. CI builds this exact vendored snapshot with Fedora kernel sources; review kernel changes and validate hardware before merging.' \
-              || true
+            git push origin HEAD:main
+            sha=$(git rev-parse HEAD)
+            echo "Pushed vendor refresh $sha to main"
+            # Token pushes do not start other workflows; dispatch explicitly.
+            gh workflow run build-publish.yml --ref main
+            while IFS= read -r n; do
+              [[ -n "$n" ]] || continue
+              gh pr close "$n" --comment 'Vendor refresh now lands on main and starts build-publish automatically.'
+            done < <(gh pr list --head bot/vendor-refresh --base main --state open --json number --jq '.[].number')
           else
             echo 'Vendored inputs are already current.'
           fi

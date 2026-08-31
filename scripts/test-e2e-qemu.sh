@@ -9,7 +9,7 @@ Execute full End-to-End (E2E) validation of Fedora Dragon Q8B setup in a QEMU
 aarch64 virtual machine.
 
 Options:
-  --copr OWNER/PROJECT     COPR repository to test (e.g. user/dragon-q8b-staging)
+  --copr OWNER/PROJECT     COPR repository to test (e.g. user/dragon-q8b)
   --rpm-dir DIR            Local directory containing RPM packages to install and test
   --release N              Fedora release version (default: 44)
   --image FILE             Path to an existing base Fedora aarch64 cloud image (.qcow2)

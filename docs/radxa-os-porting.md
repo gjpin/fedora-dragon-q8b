@@ -33,8 +33,9 @@ and only the Q8B profiles plus conf.d DMI files are packaged.
 ## Kernel refresh flow
 
 1. `refresh-vendor.sh` resolves the latest Radxa kernel, firmware, overlay,
-   ALSA UCM, FastRPC, and Armbian refs. It downloads those project-specific inputs,
-   verifies them, and opens a pull request.
+   ALSA UCM, FastRPC, and Armbian refs. It downloads those project-specific
+   inputs, verifies them, commits them to `main`, and starts the publishing
+   workflow (QEMU E2E, then COPR if the tests pass).
 2. `prepare-kernel-source.sh` starts with Fedora's current kernel dist-git
    source, inserts the vendored Radxa DTS verbatim, verifies the local Armbian
    SC8280XP driver/SoC queue, and declares the result as Fedora `Patch3003`.
@@ -47,14 +48,14 @@ and only the Q8B profiles plus conf.d DMI files are packaged.
    PCIe/UFS/MMC, SoundWire/audio, DRM/display, Iris/VPU, networking, GPIO,
    serial, I²C, and SPI paths.
 5. Pull-request CI builds source RPMs in Fedora 44 from Fedora's kernel source
-   plus the vendored Radxa/Armbian/Qualcomm inputs. After merge, the publishing workflow
-   submits the same repository contents to the staging COPR. The kernel build
-   ID and support-package release include the workflow run and attempt numbers,
-   so rebuilt content cannot collide with an older COPR NVR. Production COPR is
-   a manual `workflow_dispatch` promote, not an automatic publish.
-6. A maintainer must validate the physical board before promoting staging to
-   the production COPR project. Board-owned kernel arguments such as
-   `clk_ignore_unused` are appended to Fedora's existing command line.
+   plus the vendored Radxa/Armbian/Qualcomm inputs. After merge, the publishing
+   workflow runs QEMU E2E against locally built RPMs, then submits the same
+   SRPMs to COPR (`dragon-q8b`). The kernel build ID and support-package
+   release include the workflow run and attempt numbers, so rebuilt content
+   cannot collide with an older COPR NVR.
+6. A maintainer must still validate the physical board. Board-owned kernel
+   arguments such as `clk_ignore_unused` are appended to Fedora's existing
+   command line.
 
 The queue is deliberately applied after Fedora's own kernel patch. A Fedora
 kernel refresh that conflicts with the Q8B queue fails the build for review;

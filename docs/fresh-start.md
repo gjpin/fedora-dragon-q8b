@@ -73,21 +73,18 @@ components, and two dependency meta-packages.
 ## 3. COPR
 
 COPR provides the build chroot and publishes the resulting RPM repository.
-This project uses one staging project for testing and one production project
-for releases.
 
-### Create the projects
+### Create the project
 
-In the COPR web interface, create these projects under your COPR username:
+In the COPR web interface, create this project under your COPR username:
 
 ```text
-<your-user>/dragon-q8b-staging
 <your-user>/dragon-q8b
 ```
 
-Enable the `fedora-44-aarch64` chroot in both projects. Fedora 44 and aarch64
-are intentional: the Dragon Q8B is an ARM64 board and the repository is
-currently configured for Fedora 44.
+Enable the `fedora-44-aarch64` chroot. Fedora 44 and aarch64 are intentional:
+the Dragon Q8B is an ARM64 board and the repository is currently configured
+for Fedora 44.
 
 ### Configure COPR authentication
 
@@ -115,7 +112,7 @@ dependency-aware helper:
 
 ```shell
 ./scripts/submit-copr-builds.sh \
-  --project <your-user>/dragon-q8b-staging \
+  --project <your-user>/dragon-q8b \
   --chroot fedora-44-aarch64 \
   --srpm-dir build/srpms
 ```
@@ -140,22 +137,19 @@ COPR_CONFIG = complete contents of ~/.config/copr
 
 You can trigger a build manually via **Actions → Build and publish Fedora Dragon Q8B packages → Run workflow**, or simply push to `main`.
 
-The workflow builds in a Fedora 44 container and submits packages to
-`dragon-q8b-staging`. It then runs the Fedora QEMU aarch64 E2E validation
-(`scripts/test-e2e-qemu.sh`). QEMU is a staging gate, not a hardware
-substitute. Production `dragon-q8b` is not published automatically; promote it
-with **Actions → Build and publish Fedora Dragon Q8B packages → Run workflow**
-and enable **promote_to_production**.
+The workflow builds in a Fedora 44 container, runs Fedora QEMU aarch64 E2E
+validation (`scripts/test-e2e-qemu.sh`) against locally built RPMs, then
+submits the same SRPMs to `dragon-q8b`. QEMU is not a hardware substitute.
 
 You can also run the QEMU E2E test locally:
 
 ```shell
-./scripts/test-e2e-qemu.sh --copr <your-user>/dragon-q8b-staging
+./scripts/test-e2e-qemu.sh --copr <your-user>/dragon-q8b
 ```
 
 ## 4. Install on the Dragon Q8B
 
-Enable the production repository and install the support bundle:
+Enable the COPR repository and install the support bundle:
 
 ```shell
 sudo dnf copr enable <your-user>/dragon-q8b
@@ -176,13 +170,6 @@ sudo dragon-q8b-qnn verify
 
 The COPR RPM contains only the installer and Fedora integration. It verifies a
 pinned SHA-256 and does not redistribute the Qualcomm SDK.
-
-Or install from staging while testing:
-
-```shell
-sudo dnf copr enable <your-user>/dragon-q8b-staging
-sudo dnf install dragon-q8b-support
-```
 
 The bundled bootstrap script performs the same setup after verifying that it
 is running on the expected board:
@@ -217,5 +204,5 @@ sudo ./scripts/validate-runtime.sh
 
 Also test boot from the intended storage devices, both Ethernet ports, USB-C,
 HDMI/DP, audio playback and capture, Wi-Fi, Bluetooth, GPIO/I²C/SPI/UART
-overlays, GPU/VPU, thermals, reboot, and shutdown before promoting a staging
-build to production.
+overlays, GPU/VPU, thermals, reboot, and shutdown. QEMU cannot prove physical
+Q8B peripheral support.

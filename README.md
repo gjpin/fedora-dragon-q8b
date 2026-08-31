@@ -11,7 +11,7 @@ kernel changes.
 
 ## Install on a Dragon Q8B
 
-Create the production COPR project, enable an aarch64 Fedora chroot, and put
+Create the COPR project, enable an aarch64 Fedora chroot, and put
 the owner name in the `COPR_OWNER` environment variable. Then run:
 
 ```shell
@@ -37,9 +37,9 @@ Use `--force` only for packaging tests. A real board should identify itself as
 
 The scheduled refresh workflow checks Radxa kernel, firmware, overlays, ALSA
 UCM, and Armbian revisions. When one changes, it downloads and checksums the
-corresponding vendor inputs and opens a `bot/vendor-refresh` pull request.
-Build validation runs on the pull request; publishing runs only after the
-vendored inputs are merged.
+corresponding vendor inputs, commits them to `main`, and starts the build
+workflow. That run executes QEMU E2E against locally built RPMs and, if the
+tests pass, submits the SRPMs to COPR (`dragon-q8b`).
 
 Large Radxa source archives use Git LFS. After cloning, run `git lfs install`
 and `git lfs pull` before building locally. The build uses the vendored
@@ -48,13 +48,11 @@ toolchain, and base RPM dependencies.
 
 Configure these repository secrets before scheduled publishing:
 
-- `COPR_OWNER`: COPR user or group that owns the projects.
+- `COPR_OWNER`: COPR user or group that owns the project.
 - `COPR_CONFIG`: the complete `~/.config/copr` file contents for `copr-cli`.
 
-Automatic builds submit packages to `dragon-q8b-staging` only. QEMU E2E is a
-staging gate, not a substitute for hardware. Production COPR (`dragon-q8b`) is
-promoted manually: **Actions → Build and publish Fedora Dragon Q8B packages →
-Run workflow** with **promote_to_production** enabled.
+Automatic builds on `main` run QEMU E2E against locally built RPMs, then submit
+the same SRPMs to COPR (`dragon-q8b`). QEMU is not a substitute for hardware.
 
 There is no modem/`rmtfs` stack. Wi-Fi and Bluetooth use the M.2 E-key slot.
 The optional Heatsink 6845B PWM fan is driven from schematic v1.30 FAN_PWM
@@ -73,7 +71,7 @@ You can run the full QEMU aarch64 E2E validation test locally against a COPR rep
 
 ```shell
 # Test against a COPR project
-./scripts/test-e2e-qemu.sh --copr your-copr-user/dragon-q8b-staging
+./scripts/test-e2e-qemu.sh --copr your-copr-user/dragon-q8b
 
 # Or test against locally built RPMs
 ./scripts/test-e2e-qemu.sh --rpm-dir build/rpms
@@ -83,7 +81,7 @@ To run only the E2E tests against already-published packages in GitHub Actions w
 - Go to the **Actions** tab in GitHub, select **Fedora Dragon Q8B QEMU E2E Validation**, and click **Run workflow**.
 - Or trigger it from the CLI with GitHub CLI:
   ```shell
-  gh workflow run test-e2e.yml -f copr_project=dragon-q8b-staging
+  gh workflow run test-e2e.yml -f copr_project=dragon-q8b
   ```
 
 The runner automatically selects native hardware acceleration (`-accel hvf` on macOS Apple Silicon, `-accel kvm` on Linux with KVM, or `-accel tcg` for software emulation). It boots a Fedora aarch64 Cloud VM with UEFI firmware, installs the Dragon Q8B support bundle, and validates:

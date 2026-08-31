@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       copr_project:
-        description: Target COPR project to test (e.g. dragon-q8b-staging)
+        description: Target COPR project to test (e.g. dragon-q8b)
         required: false
-        default: dragon-q8b-staging
+        default: dragon-q8b
       copr_owner:
         description: Target COPR owner (optional override; defaults to COPR_OWNER secret)
         required: false
@@ -53,7 +53,7 @@ jobs:
             echo 'Set COPR_OWNER (secret) or the copr_owner workflow input; do not guess a COPR user.' >&2
             exit 1
           }
-          project="${INPUT_COPR_PROJECT:-dragon-q8b-staging}"
+          project="${INPUT_COPR_PROJECT:-dragon-q8b}"
           if [[ "$project" == */* ]]; then
             copr_target="$project"
           else
