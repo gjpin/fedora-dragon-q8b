@@ -11,11 +11,7 @@ Usage: dragon-q8b-overlay enable|disable|list [NAME...]
 Enable or disable Dragon Q8B device-tree overlays and re-run kernel-install
 so fdtoverlay can merge them into the Q8B DTB.
 
-Names may be overlay basenames (without .dtbo) or short aliases such as
-pwm-fan for sc8280xp-radxa-dragon-q8b-pwm-fan.
-
-Heatsink 6845B PWM fan (GPIO119/Q20 modeled; period/RPM unvalidated):
-dragon-q8b-overlay enable pwm-fan then reboot.
+Names may be overlay basenames (without .dtbo) or short aliases.
 EOF
 }
 
@@ -51,7 +47,7 @@ write_enabled() {
     tmp=$(mktemp)
     {
         printf '%s\n' '# Enabled Dragon Q8B device-tree overlays (basenames without .dtbo).'
-        printf '%s\n' '# Managed by dragon-q8b-overlay. Optional 6845B fan: enable pwm-fan then reboot.'
+        printf '%s\n' '# Managed by dragon-q8b-overlay.'
         printf '%s\n' "$@"
     } > "$tmp"
     chmod 0644 "$tmp"

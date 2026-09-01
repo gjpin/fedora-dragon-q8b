@@ -97,6 +97,9 @@ fi
 %{_presetdir}/50-dragon-q8b.preset
 
 %changelog
+* Tue Sep 01 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.1.0-5
+- Clean up thermal management to reflect autonomous ADSP firmware fan control.
+
 * Mon Aug 31 2026 Dragon Q8B Maintainers <maintainers@example.invalid> - 0.1.0-4
 - Rewrite /etc/kernel/cmdline atomically and remove only tokens this package added.
 

@@ -296,29 +296,12 @@ if [[ -d "$overlay_dir" ]]; then
     else
         log_fail "FPC PCIe overlay present" "missing sc8280xp-radxa-dragon-q8b-fpc-pcie.dtbo"
     fi
-    fan_dtbo="$overlay_dir/sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo"
-    if [[ -f "$fan_dtbo" ]]; then
-        log_ok "Heatsink 6845B pwm-fan overlay is present"
-        if command -v fdtget >/dev/null 2>&1; then
-            read -r _fan_provider fan_channel fan_period fan_flags < <(
-                fdtget -t i "$fan_dtbo" /fragment@1/__overlay__/pwm-fan pwms 2>/dev/null || true
-            )
-            fan_shutdown=$(fdtget -t i "$fan_dtbo" \
-                /fragment@1/__overlay__/pwm-fan fan-shutdown-percent 2>/dev/null || true)
-            fan_gpio=$(fdtget -t i "$fan_dtbo" \
-                /fragment@1/__overlay__/pwm-gpio-fan gpios 2>/dev/null || true)
-            if [[ "$fan_channel" == 0 && "$fan_period" == 40000 && "$fan_flags" == 1 \
-                && "$fan_shutdown" == 100 && " $fan_gpio " == *" 119 0 "* ]] \
-                && fdtget -p "$fan_dtbo" /fragment@0/__overlay__/fan-pwm-state 2>/dev/null \
-                    | grep -qx bias-pull-down; then
-                log_ok "6845B DTBO models GPIO119/Q20 inversion and pulled-high fail-safe"
-            else
-                log_fail "6845B DTBO electrical model" \
-                    "expected GPIO119 active-high, 25 kHz inverted PWM, pull-down, shutdown 100%"
-            fi
-        fi
+
+    if [[ -e "$overlay_dir/sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo" ]]; then
+        log_fail "Retired pwm-fan overlay absent" \
+            "unexpected sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo"
     else
-        log_fail "Heatsink 6845B pwm-fan overlay present" "missing sc8280xp-radxa-dragon-q8b-pwm-fan.dtbo"
+        log_ok "Retired pwm-fan overlay is not installed"
     fi
 
     if [[ -x /usr/sbin/dragon-q8b-overlay ]]; then

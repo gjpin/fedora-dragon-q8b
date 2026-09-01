@@ -12,7 +12,3 @@ CONFIG_DWMAC_TC956X=m
 
 # Iris video codec used by the Q8B DTS.
 CONFIG_VIDEO_QCOM_IRIS=m
-
-# Optional Heatsink 6845B PWM fan overlay (schematic GPIO119 via pwm-gpio).
-CONFIG_PWM_FAN=m
-CONFIG_PWM_GPIO=m

@@ -58,15 +58,15 @@ the vendor refresh workflow starts that job. QEMU is not a substitute for
 hardware.
 
 There is no modem/`rmtfs` stack. Wi-Fi and Bluetooth use the M.2 E-key slot.
-The optional Heatsink 6845B PWM fan is driven from schematic v1.30 FAN_PWM
-(TLMM GPIO119) via `pwm-gpio`. Enable it with `dragon-q8b-overlay enable pwm-fan`
-and reboot. The overlay models the board's Q20 open-drain inversion and keeps
-Q20 off at idle/shutdown so J6's 10 kΩ pull-up requests the inferred full-speed
-fail-safe state. The 25 kHz period, RPM curve, starting duty, and that inferred
-fan response still require physical 6845B validation.
-The default thermal governor is `power_allocator`; `step_wise` is applied only
-when a `pwm-fan` cooling device exists. Board-owned kernel arguments such as
-`clk_ignore_unused` are appended to Fedora's existing command line.
+The optional Heatsink 6845B PWM fan is controlled autonomously by firmware
+running on the Qualcomm Hexagon ADSP (`remoteproc_adsp`, `qcadsp8280.mbn`). When
+Linux loads the ADSP firmware, fan speed is regulated automatically based on
+system load and temperature telemetry. If ADSP firmware is not loaded, the fan
+spins at full speed as a hardware fail-safe. No Device Tree overlay or Linux
+`pwm-fan` driver is required.
+The default thermal governor is `power_allocator` for SoC thermal throttling.
+Board-owned kernel arguments such as `clk_ignore_unused` are appended to
+Fedora's existing command line.
 
 ## QEMU End-to-End Testing
 
@@ -97,7 +97,7 @@ The runner automatically selects native hardware acceleration (`-accel hvf` on m
 - **FastRPC Runtime**: Validates `libcdsprpc.so`, `libadsprpc.so`, upstream `60-fastrpc.rules` (0640 + group `fastrpc`), and DSP search-path environment variables. `dsp_check` is optional (not in FastRPC 1.0.6).
 - **QNN / QAIRT Integration**: Optional `dragon-q8b-qnn` Recommends. When installed, validates the checksum-pinned Qualcomm Software Center Community Edition metadata, installer CLI, license disclosure, and ld.so/profile configuration. The first install requires `--accept-license`. Later `dnf update` refreshes the SDK silently when the bundled license PDF is unchanged. Hardware validation runs after the SDK is installed on a physical Q8B.
 - **ALSA UCM Profiles**: Validates Dragon Q8B UCM2 profiles and the conf.d DMI match. Fedora's SoC `sc8280xp.conf` is not replaced.
-- **Thermal & Fan Cooling**: Validates `dragon-q8b-thermal`, default `power_allocator`, packaged tmpfiles, and overlay-gated `step_wise` when a `pwm-fan` cooling device exists. QEMU does not bind the fan.
+- **Thermal Management**: Validates `dragon-q8b-thermal`, default `power_allocator`, packaged tmpfiles, and thermal configuration persistence.
 
 ## Local Fedora build
 

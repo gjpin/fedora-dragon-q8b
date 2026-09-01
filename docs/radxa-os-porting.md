@@ -17,11 +17,11 @@ board. Its relevant platform contract is:
 | Display/media | Adreno display pipeline, DP/HDMI bridge, Iris/VPU firmware | DRM/MSM, DP, bridge, Iris/Venus configuration and firmware |
 | Storage | UFS, NVMe, and microSD | Fedora UFS, PCIe, MMC, and storage drivers built into or shipped by the kernel |
 | Ethernet | QPS615/TC9564 PCIe switch and two 2.5GbE ports | Q8B DT plus TC956X, XPCS, stmmac, and QCA808x changes from the pinned queue |
-| Expansion | Q8B GPIO/I²C/SPI/UART muxes and optional 6845B fan | Radxa overlays plus local `pwm-fan` overlay (schematic GPIO119 `pwm-gpio`; Q20 inversion compensated; pulled-high fail-safe intent modeled; period/RPM response still unvalidated); enable with `dragon-q8b-overlay` |
+| Expansion | Q8B GPIO/I²C/SPI/UART muxes and PCIe FPC | Radxa overlays plus local FPC PCIe overlay; enable with `dragon-q8b-overlay` |
 | Wi-Fi/Bluetooth | Qualcomm radio firmware and M.2 E-key controller setup (no modem/`rmtfs`) | Fedora firmware, `bluez`, and a deterministic locally-administered BT address via `dragon-q8b-bt.service` |
 | NPU / FastRPC | Hexagon DSP FastRPC runtime | Qualcomm FastRPC 1.0.6 (`fastrpc`) plus `dragon-q8b-fastrpc` DSP search paths; upstream udev 0640 + group `fastrpc` |
 | AI Acceleration | Qualcomm QAIRT/QNN SDK | `dragon-q8b-qnn` (Recommends) downloads the checksum-pinned Software Center Community Edition after explicit license acceptance and validates the SC8280XP HTP v68 backend |
-| Thermal & Cooling | `rsetup` thermal governor modes (`step_wise`, `power_allocator`) | Default `power_allocator` (fanless). Optional Heatsink 6845B overlay uses schematic GPIO119; `step_wise` only on zones that list a `pwm-fan` cooling device. Packaged `/usr/lib/tmpfiles.d/dragon-q8b-thermal.conf` plus a oneshot apply after sysfs bind. |
+| Thermal & Cooling | `rsetup` thermal governor modes (`step_wise`, `power_allocator`) | Active cooling (Heatsink 6845B fan) managed autonomously by ADSP firmware (`qcadsp8280.mbn`). Default `power_allocator` governor for SoC thermal throttling. Packaged `/usr/lib/tmpfiles.d/dragon-q8b-thermal.conf` plus oneshot service apply. |
 
 Radxa's OS build is product/SoC oriented: it combines a board kernel, a
 firmware package, overlays, ALSA UCM, FastRPC runtime, and a UEFI boot configuration. Fedora

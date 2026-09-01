@@ -25,6 +25,23 @@ check_dtb() {
         test -e "/lib/modules/$version/dtb/qcom/sc8280xp-radxa-dragon-q8b.dtb" || \
         test -e "/boot/dtb-$version/qcom/sc8280xp-radxa-dragon-q8b.dtb"
 }
+check_adsp_running() {
+    local remoteproc firmware state
+    for remoteproc in /sys/class/remoteproc/remoteproc*; do
+        [[ -d "$remoteproc" ]] || continue
+        firmware=$(cat "$remoteproc/firmware" 2>/dev/null || true)
+        [[ "$firmware" == *qcadsp8280.mbn ]] || continue
+        state=$(cat "$remoteproc/state" 2>/dev/null || true)
+        if [[ "$state" != running ]]; then
+            printf 'ADSP remoteproc %s is %s (firmware: %s)\n' \
+                "${remoteproc##*/}" "${state:-unknown}" "$firmware" >&2
+            return 1
+        fi
+        return 0
+    done
+    printf 'no remoteproc using qcadsp8280.mbn was found\n' >&2
+    return 1
+}
 
 check 'device tree identifies Radxa Dragon Q8B' check_q8b_compatible
 for package in qrtr tqftpserv bluez alsa-ucm qcom-firmware pd-mapper dragon-q8b-support \
@@ -50,6 +67,7 @@ for firmware in \
     /lib/firmware/qcom/vpu/vpu20_p4_gen2_s6.mbn; do
     check "firmware $firmware exists" check_firmware "$firmware"
 done
+check 'ADSP remoteproc loaded qcadsp8280.mbn and is running' check_adsp_running
 
 if command -v bluetoothctl >/dev/null 2>&1; then
     check 'Bluetooth controller is visible' bluetoothctl list

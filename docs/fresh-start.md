@@ -187,14 +187,13 @@ release checks it bypasses. The script does not flash SPI/UEFI firmware,
 remove old kernels, upgrade the whole system, or reboot automatically.
 
 There is no modem/`rmtfs` stack (Wi-Fi/BT is M.2 E-key only). The optional
-Heatsink 6845B PWM fan uses schematic GPIO119 (`pwm-gpio`):
-`sudo dragon-q8b-overlay enable pwm-fan` then reboot. The overlay compensates
-for the schematic Q20 open-drain inversion and favors J6's pulled-high,
-inferred full-speed state when PWM control is inactive or shutting down. The
-25 kHz period, RPM curve, starting duty, and inferred high=input-full-speed
-behavior are not hardware-validated. Default cooling is `power_allocator`.
-Board-owned kernel arguments such as `clk_ignore_unused` are appended to
-Fedora's command line.
+Heatsink 6845B PWM fan is controlled autonomously by firmware running on the
+Qualcomm Hexagon ADSP (`qcadsp8280.mbn`). When Linux loads the ADSP firmware,
+fan speed is regulated automatically based on temperature and system load. If
+ADSP firmware is absent, the fan spins at full speed as a hardware fail-safe. No
+Device Tree overlay or Linux `pwm-fan` configuration is needed. Default thermal
+governor is `power_allocator` for SoC thermal throttling. Board-owned kernel
+arguments such as `clk_ignore_unused` are appended to Fedora's command line.
 
 ## 5. Validate the hardware
 

@@ -115,15 +115,12 @@ test "$(bash scripts/detect-affected-packages.sh --packages dragon-q8b-kernel)" 
 test "$(bash scripts/detect-affected-packages.sh --packages non-kernel)" = "dragon-q8b-firmware dragon-q8b-boot dragon-q8b-overlays dragon-q8b-alsa-ucm fastrpc dragon-q8b-qnn dragon-q8b-support"
 test "$(bash scripts/detect-affected-packages.sh --files scripts/qairt-catalog.sh)" = "dragon-q8b-qnn"
 
-# The Q8B schematic drives the fan-control input through an inverting Q20
-# open-drain stage. Keep the GPIO active-high at Q20's gate, compensate at the
-# PWM consumer, and favor Q20-off/pulled-high while idle or shutting down.
-fan_overlay=packaging/overlays/sc8280xp-radxa-dragon-q8b-pwm-fan.dtso
-grep -q '#include <dt-bindings/pwm/pwm.h>' "$fan_overlay"
-grep -Eq 'bias-pull-down;' "$fan_overlay"
-grep -Eq 'gpios = <&tlmm 119 GPIO_ACTIVE_HIGH>;' "$fan_overlay"
-grep -Eq 'pwms = <&fan_pwm 0 40000 PWM_POLARITY_INVERTED>;' "$fan_overlay"
-grep -Eq 'fan-shutdown-percent = <100>;' "$fan_overlay"
+test ! -e packaging/overlays/sc8280xp-radxa-dragon-q8b-pwm-fan.dtso
+! grep -Fxq 'local:sc8280xp-radxa-dragon-q8b-pwm-fan' config/overlays.list
+if packaging/boot/dragon-q8b-thermal --fan-speed 3 >/dev/null 2>&1; then
+    echo 'dragon-q8b-thermal unexpectedly accepted the retired --fan-speed option' >&2
+    exit 1
+fi
 
 cmdline_tokens=$(mktemp)
 cmdline_file=$(mktemp)

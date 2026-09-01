@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dragon-q8b-thermal - Thermal Governor & Cooling Management for Dragon Q8B
+# dragon-q8b-thermal - Thermal Governor Management for Dragon Q8B
 # =============================================================================
 # Reproduces the thermal governor configuration functionality of Radxa OS
-# (rsetup). Default cooling is fanless (power_allocator). step_wise is used
-# only on zones that list a pwm-fan cooling device (Heatsink 6845B overlay).
+# (rsetup). Default governor is power_allocator. Active cooling (Heatsink 6845B
+# PWM fan) is managed autonomously by ADSP firmware inside the SC8280XP SoC.
 # =============================================================================
 set -Eeuo pipefail
 
@@ -17,8 +17,10 @@ usage() {
     cat <<'EOF'
 Usage: dragon-q8b-thermal [OPTIONS]
 
-Configure and monitor thermal governor policies and fan cooling on the
-Radxa Dragon Q8B (Qualcomm SC8280XP).
+Configure and monitor thermal governor policies on the Radxa Dragon Q8B
+(Qualcomm SC8280XP). Active fan cooling (Heatsink 6845B) is managed
+autonomously by ADSP firmware; Linux thermal governors control SoC
+thermal throttling.
 
 Options:
   -m, --mode POLICY        Set thermal governor policy (default: power_allocator)
@@ -27,7 +29,6 @@ Options:
   -s, --status             Display status of all thermal zones and cooling devices
   -p, --persist            Persist the selected governor across system reboots
       --apply-config       Read /etc/dragon-q8b/thermal.conf and apply policy
-  -f, --fan-speed LEVEL    Set cooling device state (0 to max_state; requires user_space)
   -i, --menu               Open interactive thermal configuration menu
   -b, --batch              Run in non-interactive batch mode (default when options given)
   -n, --dry-run            Show actions without writing to sysfs or disk
@@ -35,12 +36,11 @@ Options:
   -h, --help               Show this help message
 
 Examples:
-  dragon-q8b-thermal                          # Apply default fanless power_allocator
+  dragon-q8b-thermal                          # Apply default power_allocator
   dragon-q8b-thermal --status                 # View current temperatures & governors
-  dragon-q8b-thermal -m power_allocator       # Switch to passive/fanless cooling mode
-  dragon-q8b-thermal -m user_space -f 3       # Switch to manual control and set fan level
+  dragon-q8b-thermal -m power_allocator       # Switch to passive thermal throttling
+  dragon-q8b-thermal -m step_wise -p          # Switch to step_wise and persist
   dragon-q8b-thermal --menu                   # Open interactive rsetup-style menu
-  dragon-q8b-overlay enable pwm-fan           # Optional 6845B overlay (GPIO119), then reboot
 EOF
 }
 
@@ -62,7 +62,6 @@ log_warn() {
 MODE=""
 ACTION=""
 PERSIST=0
-FAN_SPEED=""
 DRY_RUN=0
 QUIET=0
 INTERACTIVE=0
@@ -86,11 +85,6 @@ while [[ $# -gt 0 ]]; do
         --apply-config)
             ACTION="apply_config"
             shift
-            ;;
-        -f|--fan-speed|--fan-level)
-            FAN_SPEED=${2:?missing fan speed level after $1}
-            ACTION="fan_speed"
-            shift 2
             ;;
         -i|--menu|--interactive)
             INTERACTIVE=1
@@ -151,28 +145,6 @@ get_cooling_devices() {
     printf '%s\n' "${cdevs[@]:-}"
 }
 
-pwm_fan_present() {
-    local c
-    while IFS= read -r c; do
-        [[ -n "$c" ]] || continue
-        [[ "$(cat "$c/type" 2>/dev/null || true)" == pwm-fan ]] && return 0
-    done < <(get_cooling_devices)
-    return 1
-}
-
-zone_has_pwm_fan() {
-    local z=$1 link target base
-    for link in "$z"/cdev[0-9] "$z"/cdev[0-9][0-9]; do
-        [[ -e "$link" || -L "$link" ]] || continue
-        base=$(basename "$link")
-        [[ "$base" =~ ^cdev[0-9]+$ ]] || continue
-        target=$(readlink -f "$link" 2>/dev/null || echo "$link")
-        [[ -n "$target" ]] || continue
-        [[ "$(cat "$target/type" 2>/dev/null || true)" == pwm-fan ]] && return 0
-    done
-    return 1
-}
-
 read_conf_value() {
     local key=$1 default=$2 file=${3:-$CONFIG_FILE}
     local value=$default
@@ -191,7 +163,8 @@ read_conf_value() {
 
 show_status() {
     echo "================================================================================"
-    echo "                   Radxa Dragon Q8B Thermal & Fan Status"
+    echo "                   Radxa Dragon Q8B Thermal Status"
+    echo "    (Heatsink 6845B fan is managed autonomously by ADSP firmware)"
     echo "================================================================================"
 
     local zone_found=0
@@ -259,7 +232,6 @@ show_status() {
 set_governor() {
     local target_policy=$1
     local persist_flag=$2
-    local pwm_fan_only=${3:-0}
 
     require_root
 
@@ -279,11 +251,6 @@ set_governor() {
         type=$(cat "$z/type" 2>/dev/null || echo "unknown")
         avail=$(cat "$z/available_policies" 2>/dev/null || echo "")
         cur_policy=$(cat "$z/policy" 2>/dev/null || echo "")
-
-        if [[ "$pwm_fan_only" -eq 1 ]] && ! zone_has_pwm_fan "$z"; then
-            skipped=$((skipped + 1))
-            continue
-        fi
 
         if [[ -n "$avail" && " $avail " != *" $target_policy "* ]]; then
             log_warn "$zid ($type) does not support policy '$target_policy' (available: $avail); skipping."
@@ -311,7 +278,7 @@ set_governor() {
     done
 
     if [[ "$persist_flag" -eq 1 ]]; then
-        save_persistence "$target_policy" 0
+        save_persistence "$target_policy"
     fi
 
     log "Thermal governor update complete ($updated applied/matched, $skipped skipped)."
@@ -319,12 +286,11 @@ set_governor() {
 
 save_persistence() {
     local target_policy=$1
-    local auto_pwm=${2:-0}
 
     require_root
 
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        log "[DRY-RUN] Would save configuration to $CONFIG_FILE (policy: $target_policy, AUTO_PWM_FAN=$auto_pwm)"
+        log "[DRY-RUN] Would save configuration to $CONFIG_FILE (policy: $target_policy)"
         return 0
     fi
 
@@ -333,68 +299,20 @@ save_persistence() {
 # Configuration for Radxa Dragon Q8B thermal governor
 # Generated by dragon-q8b-thermal on $(date -u +'%Y-%m-%d %H:%M:%S UTC')
 # Packaged tmpfiles live in $PACKAGED_TMPFILES; this tool does not write /etc/tmpfiles.d.
+# Active fan cooling is managed autonomously by ADSP firmware.
 GOVERNOR=${target_policy}
-AUTO_PWM_FAN=${auto_pwm}
 EOF
     chmod 0644 "$CONFIG_FILE"
     log "Saved configuration to $CONFIG_FILE"
 }
 
 apply_saved_config() {
-    local policy auto_pwm
+    local policy
     policy=$(read_conf_value GOVERNOR "$DEFAULT_GOVERNOR")
-    auto_pwm=$(read_conf_value AUTO_PWM_FAN 1)
 
     require_root
-    if [[ "$auto_pwm" != 1 ]]; then
-        log "Applying explicit thermal governor: $policy"
-        set_governor "$policy" 0
-        return 0
-    fi
-
-    log "Applying default fanless governor '$DEFAULT_GOVERNOR'"
-    set_governor "$DEFAULT_GOVERNOR" 0
-    if pwm_fan_present; then
-        log "pwm-fan cooling device present; using step_wise on zones that list it"
-        set_governor step_wise 0 1
-    fi
-}
-
-set_fan_speed() {
-    local speed=$1
-    require_root
-
-    local cdevs fans=()
-    mapfile -t cdevs < <(get_cooling_devices)
-
-    for c in "${cdevs[@]}"; do
-        [[ -n "$c" ]] || continue
-        [[ "$(cat "$c/type" 2>/dev/null || true)" == pwm-fan ]] || continue
-        fans+=("$c")
-    done
-
-    if [[ ${#fans[@]} -eq 0 ]]; then
-        log_err "No pwm-fan cooling device found. Enable the Heatsink 6845B overlay (dragon-q8b-overlay enable pwm-fan) and reboot."
-        exit 1
-    fi
-
-    for c in "${fans[@]}"; do
-        local cid max_state
-        cid=$(basename "$c")
-        max_state=$(cat "$c/max_state" 2>/dev/null || echo "0")
-
-        if (( speed < 0 || speed > max_state )); then
-            log_err "Fan speed $speed is out of range for $cid (0 - $max_state)"
-            exit 1
-        fi
-
-        if [[ "$DRY_RUN" -eq 1 ]]; then
-            log "[DRY-RUN] Would set $cid/cur_state -> $speed (max: $max_state)"
-        else
-            echo "$speed" > "$c/cur_state"
-            log "Set $cid cooling state to $speed (max: $max_state)."
-        fi
-    done
+    log "Applying thermal governor '$policy'"
+    set_governor "$policy" 0
 }
 
 interactive_menu() {
@@ -402,31 +320,30 @@ interactive_menu() {
         clear
         echo "================================================================================"
         echo "           Radxa Dragon Q8B Thermal Governor Setup (rsetup style)"
-        echo "  Default is fanless power_allocator. Heatsink 6845B: overlay enable pwm-fan,"
-        echo "  reboot, then step_wise is applied only on zones that list pwm-fan."
+        echo "  Active fan cooling is managed autonomously by ADSP firmware."
+        echo "  Select a thermal governor for SoC thermal mitigation/throttling:"
         echo "================================================================================"
-        echo " 1) step_wise        - Active cooling (Heatsink 6845B: dragon-q8b-overlay enable pwm-fan then reboot)"
-        echo " 2) power_allocator  - Passive cooling / fanless or fixed DC fan [Default]"
-        echo " 3) user_space       - Manual fan speed & cooling device control"
+        echo " 1) power_allocator  - Passive cooling / thermal throttling [Default]"
+        echo " 2) step_wise        - Step-wise thermal throttling"
+        echo " 3) user_space       - Userspace thermal control"
         echo " 4) fair_share       - Distribute cooling load across devices proportionally"
         echo " 5) bang_bang        - Two-point threshold cooling"
         echo " 6) View Status      - Show thermal zone temperatures and cooling devices"
-        echo " 7) Set Fan Speed    - Set manual fan speed state (requires user_space)"
-        echo " 8) Exit"
+        echo " 7) Exit"
         echo "================================================================================"
-        printf "Select an option [1-8]: "
+        printf "Select an option [1-7]: "
         read -r choice
 
         case "$choice" in
             1)
                 echo
-                set_governor "step_wise" 1
+                set_governor "power_allocator" 1
                 printf "\nPress Enter to continue..."
                 read -r _
                 ;;
             2)
                 echo
-                set_governor "power_allocator" 1
+                set_governor "step_wise" 1
                 printf "\nPress Enter to continue..."
                 read -r _
                 ;;
@@ -454,19 +371,7 @@ interactive_menu() {
                 printf "\nPress Enter to return to menu..."
                 read -r _
                 ;;
-            7)
-                echo
-                printf "Enter desired fan speed level (integer): "
-                read -r fspeed
-                if [[ "$fspeed" =~ ^[0-9]+$ ]]; then
-                    set_fan_speed "$fspeed"
-                else
-                    echo "Invalid number: $fspeed"
-                fi
-                printf "\nPress Enter to continue..."
-                read -r _
-                ;;
-            8|q|Q)
+            7|q|Q)
                 echo "Exiting."
                 exit 0
                 ;;
@@ -488,9 +393,6 @@ case "$ACTION" in
     status)
         show_status
         ;;
-    fan_speed)
-        set_fan_speed "$FAN_SPEED"
-        ;;
     apply_config)
         apply_saved_config
         ;;
@@ -498,7 +400,7 @@ case "$ACTION" in
         set_governor "$MODE" "$PERSIST"
         ;;
     *)
-        log "No options specified; applying packaged thermal policy (power_allocator, step_wise if pwm-fan)."
+        log "No options specified; applying packaged thermal policy ($DEFAULT_GOVERNOR)."
         apply_saved_config
         ;;
 esac
