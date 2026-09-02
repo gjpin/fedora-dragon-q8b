@@ -20,16 +20,19 @@ jobs:
     timeout-minutes: 120
     container: fedora:44
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          lfs: false
       - name: Install refresh tools
         run: |
           dnf -y install \
             bash coreutils curl git git-lfs jq binutils ShellCheck tar xz unzip python3 gh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          lfs: false
+      - name: Materialize LFS inputs
+        run: |
           repo_root="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE is unset}"
           git config --global --add safe.directory "$repo_root"
+          git -C "$repo_root" rev-parse --show-toplevel
           git -C "$repo_root" lfs install --local
           git -C "$repo_root" lfs pull
       - name: Refresh and validate vendored inputs
