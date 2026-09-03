@@ -110,7 +110,7 @@ github_json() {
 radxa_kernel_ref=$(resolve_ref "$RADXA_KERNEL_REPO" "refs/heads/$RADXA_KERNEL_BRANCH")
 radxa_firmware_ref=$(resolve_ref "$RADXA_FIRMWARE_REPO" refs/heads/main)
 radxa_overlays_ref=$(resolve_ref "$RADXA_OVERLAYS_REPO" refs/heads/main)
-armbian_ref=$(resolve_ref "$ARMBIAN_BUILD_REPO" refs/heads/main)
+armbian_ref=${ARMBIAN_REF:-$(resolve_ref "$ARMBIAN_BUILD_REPO" refs/heads/main)}
 fastrpc_ref=$(resolve_ref "$FASTRPC_REPO" "refs/tags/${FASTRPC_TAG}")
 [[ -n "$fastrpc_ref" ]] || fastrpc_ref=$(resolve_ref "$FASTRPC_REPO" "refs/tags/${FASTRPC_TAG}^{}")
 for value_name in radxa_kernel_ref radxa_firmware_ref radxa_overlays_ref armbian_ref fastrpc_ref; do
