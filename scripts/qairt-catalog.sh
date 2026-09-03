@@ -109,11 +109,11 @@ qairt_catalog_latest() {
 
 qairt_zip_has_runtime() {
     local zip=$1 ver=$2 target=$3
-    unzip -l "$zip" | grep -Fq "qairt/${ver}/bin/${target}/qnn-platform-validator" || return 1
-    unzip -l "$zip" | grep -Fq "qairt/${ver}/lib/${target}/libQnnHtp.so" || return 1
-    unzip -l "$zip" | grep -Fq "qairt/${ver}/lib/${target}/libQnnHtpV68Stub.so" || return 1
-    unzip -l "$zip" | grep -Fq "qairt/${ver}/lib/hexagon-v68/unsigned/libQnnHtpV68Skel.so" || return 1
-    unzip -l "$zip" | grep -Fq "qairt/${ver}/LICENSE.pdf" || return 1
+    unzip -l "$zip" | grep -F "qairt/${ver}/bin/${target}/qnn-platform-validator" >/dev/null || return 1
+    unzip -l "$zip" | grep -F "qairt/${ver}/lib/${target}/libQnnHtp.so" >/dev/null || return 1
+    unzip -l "$zip" | grep -F "qairt/${ver}/lib/${target}/libQnnHtpV68Stub.so" >/dev/null || return 1
+    unzip -l "$zip" | grep -F "qairt/${ver}/lib/hexagon-v68/unsigned/libQnnHtpV68Skel.so" >/dev/null || return 1
+    unzip -l "$zip" | grep -F "qairt/${ver}/LICENSE.pdf" >/dev/null || return 1
 }
 
 qairt_pick_target() {

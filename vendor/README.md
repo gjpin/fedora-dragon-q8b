@@ -25,11 +25,11 @@ This README is documentation only and is not checksummed.
 
 | Vendored files | Original source |
 | --- | --- |
-| `radxa/kernel/sc8280xp-radxa-dragon-q8b.dts` | [`radxa/kernel`](https://github.com/radxa/kernel/blob/4a7a039590c7185ed9c53453b163806311799eed/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts), branch `linux-7.0.11`, commit `4a7a039590c7185ed9c53453b163806311799eed` |
+| `radxa/kernel/sc8280xp-radxa-dragon-q8b.dts` | [`radxa/kernel`](https://github.com/radxa/kernel/blob/657c0f722940cd9d3b51abfa7383655ec7d2c795/arch/arm64/boot/dts/qcom/sc8280xp-radxa-dragon-q8b.dts), branch `linux-7.0.11`, commit `657c0f722940cd9d3b51abfa7383655ec7d2c795` |
 | `radxa/firmware/radxa-firmware-*.tar.gz` | [`radxa-pkg/radxa-firmware`](https://github.com/radxa-pkg/radxa-firmware/archive/e1761009df008adfd62c77f2c5584e3067449013.tar.gz), commit `e1761009df008adfd62c77f2c5584e3067449013` |
-| `radxa/overlays/radxa-overlays-*.tar.gz` | [`radxa-pkg/radxa-overlays`](https://github.com/radxa-pkg/radxa-overlays/archive/be64705364a8f131da018e322e04f3232e56d9a9.tar.gz), commit `be64705364a8f131da018e322e04f3232e56d9a9` |
+| `radxa/overlays/radxa-overlays-*.tar.gz` | [`radxa-pkg/radxa-overlays`](https://github.com/radxa-pkg/radxa-overlays/archive/074a207a307d585d9bb899cb35b575be3043d950.tar.gz), commit `074a207a307d585d9bb899cb35b575be3043d950` |
 | `radxa/alsa/alsa-ucm-conf-*.tar.gz` | [`radxa-pkg/alsa-ucm-conf` tag `1.2.16.1-radxa-1`](https://github.com/radxa-pkg/alsa-ucm-conf/releases/tag/1.2.16.1-radxa-1) git tarball with the `alsa-project/alsa-ucm-conf` submodule |
-| `armbian/sc8280xp-edge-patches/*.patch` | [`armbian/build`](https://github.com/armbian/build/tree/1f33ee9db0063ec281d3c273ac5df5dcd6f84450/patch/kernel/archive/sc8280xp-edge), commit `1f33ee9db0063ec281d3c273ac5df5dcd6f84450` |
+| `armbian/sc8280xp-edge-patches/*.patch` | [`armbian/build`](https://github.com/armbian/build/tree/34e66c37211c70ef5cfad9c80dd76389720e19b7/patch/kernel/archive/sc8280xp-edge), commit `34e66c37211c70ef5cfad9c80dd76389720e19b7` |
 | `qualcomm/fastrpc/fastrpc-*.tar.gz` | [`qualcomm/fastrpc`](https://github.com/qualcomm/fastrpc/archive/refs/tags/v1.0.6.tar.gz), tag `v1.0.6`, commit `5f0b6a33a19f3f7f0c06709846752a2caf64e413` |
 
 The Armbian patch filenames are listed in

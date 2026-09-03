@@ -23,7 +23,7 @@ jobs:
       - name: Install refresh tools
         run: |
           dnf -y install \
-            bash coreutils curl git git-lfs jq binutils ShellCheck tar xz unzip python3 gh
+            bash coreutils curl git git-lfs jq binutils ShellCheck tar xz unzip python3 gh rsync findutils
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -48,7 +48,9 @@ jobs:
             packaging/boot/dragon-q8b-thermal \
             packaging/boot/50-dragon-q8b.install \
             packaging/boot/91-dragon-q8b.install \
-            packaging/overlays/dragon-q8b-overlay
+            packaging/overlays/dragon-q8b-overlay \
+            packaging/qnn/dragon-q8b-qnn-sync \
+            packaging/qnn/dragon-q8b-qnn.sh
           git diff --check
       - name: Commit vendor refresh and start build-publish
         env:
@@ -56,12 +58,16 @@ jobs:
         run: |
           if git status --short --untracked-files=all -- \
               vendor config/dragon-q8b.env \
-              config/armbian-sc8280xp-edge-patches.sha256 packaging/inputs.lock | \
+              config/armbian-sc8280xp-edge-patches.sha256 \
+              config/armbian-sc8280xp-edge-patches.list packaging/inputs.lock \
+              packaging/qnn | \
               grep -q .; then
             git config user.name github-actions[bot]
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
             git add vendor config/dragon-q8b.env \
-              config/armbian-sc8280xp-edge-patches.sha256 packaging/inputs.lock
+              config/armbian-sc8280xp-edge-patches.sha256 \
+              config/armbian-sc8280xp-edge-patches.list packaging/inputs.lock \
+              packaging/qnn
             git commit -m 'chore: refresh vendored Dragon Q8B inputs'
             git push origin HEAD:main
             sha=$(git rev-parse HEAD)

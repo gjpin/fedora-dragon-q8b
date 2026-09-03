@@ -228,19 +228,27 @@ done < "$repo_root/config/armbian-sc8280xp-edge-patches.list"
 alsa_release_json="$work_dir/alsa-release.json"
 download "${ALSA_UCM_API}/releases/latest" "$alsa_release_json"
 alsa_version=$(jq -er '.tag_name | select(type == "string" and length > 0)' "$alsa_release_json")
-alsa_clone="$work_dir/alsa-ucm-conf"
-echo "Cloning Radxa ALSA UCM ${alsa_version} with submodule"
-git clone --depth=1 --branch "$alsa_version" --recurse-submodules \
-    "$ALSA_UCM_REPO" "$alsa_clone"
-[[ -d "$alsa_clone/src/ucm2" ]] || {
-    echo "ALSA UCM git checkout is missing src/ucm2 (submodule)" >&2
-    exit 1
-}
-alsa_export="$work_dir/alsa-export/alsa-ucm-conf-${alsa_version}"
-mkdir -p "$alsa_export"
-rsync -a --exclude '.git' "$alsa_clone/" "$alsa_export/"
 alsa_archive="$stage/vendor/radxa/alsa/alsa-ucm-conf-${alsa_version}.tar.gz"
-tar -C "$work_dir/alsa-export" -czf "$alsa_archive" "alsa-ucm-conf-${alsa_version}"
+existing_alsa_archive="$repo_root/vendor/radxa/alsa/alsa-ucm-conf-${alsa_version}.tar.gz"
+if [[ "$alsa_version" == "$ALSA_UCM_VERSION" && -r "$existing_alsa_archive" ]]; then
+    echo "Radxa ALSA UCM ${alsa_version} archive is already current"
+    mkdir -p "$(dirname "$alsa_archive")"
+    cp "$existing_alsa_archive" "$alsa_archive"
+else
+    alsa_clone="$work_dir/alsa-ucm-conf"
+    echo "Cloning Radxa ALSA UCM ${alsa_version} with submodule"
+    git clone --depth=1 --branch "$alsa_version" --recurse-submodules \
+        "$ALSA_UCM_REPO" "$alsa_clone"
+    [[ -d "$alsa_clone/src/ucm2" ]] || {
+        echo "ALSA UCM git checkout is missing src/ucm2 (submodule)" >&2
+        exit 1
+    }
+    alsa_export="$work_dir/alsa-export/alsa-ucm-conf-${alsa_version}"
+    mkdir -p "$alsa_export"
+    rsync -a --exclude '.git' "$alsa_clone/" "$alsa_export/"
+    mkdir -p "$(dirname "$alsa_archive")"
+    tar -C "$work_dir/alsa-export" -czf "$alsa_archive" "alsa-ucm-conf-${alsa_version}"
+fi
 archive_has_license "$alsa_archive" || {
     echo "ALSA UCM git archive has no license file" >&2
     exit 1
@@ -325,12 +333,25 @@ done
 cp "$stage/vendor/SHA256SUMS" "$repo_root/vendor/SHA256SUMS"
 cp "$patch_manifest" "$repo_root/config/armbian-sc8280xp-edge-patches.sha256"
 cp "$config_file" "$repo_root/config/dragon-q8b.env"
+for qnn_source in "$repo_root/packaging/qnn/dragon-q8b-qnn-sync" "$repo_root/packaging/qnn/dragon-q8b-qnn.conf"; do
+    sed -i \
+        -e "s#^QAIRT_VERSION=.*#QAIRT_VERSION=$qairt_version#" \
+        -e "s#^QAIRT_DOWNLOAD_URL=.*#QAIRT_DOWNLOAD_URL=$qairt_url#" \
+        -e "s#^QAIRT_ARCHIVE_SHA256=.*#QAIRT_ARCHIVE_SHA256=$qairt_archive_sha256#" \
+        -e "s#^QAIRT_LICENSE_SHA256=.*#QAIRT_LICENSE_SHA256=$qairt_license_sha256#" \
+        -e "s#^QAIRT_TARGET=.*#QAIRT_TARGET=$qairt_target#" \
+        -e "s#^QAIRT_DSP_ARCH=.*#QAIRT_DSP_ARCH=$qairt_dsp_arch#" \
+        "$qnn_source"
+done
+printf '/opt/qualcomm/qairt/current/lib/%s\n' "$qairt_target" \
+    > "$repo_root/packaging/qnn/dragon-q8b-qnn-ld.so.conf"
 bash "$repo_root/scripts/update-input-lock.sh" --env "$env_file"
 
 changed=0
 if git -C "$repo_root" status --short --untracked-files=all -- \
     vendor config/dragon-q8b.env config/armbian-sc8280xp-edge-patches.sha256 \
-    packaging/inputs.lock | grep -q .; then
+    config/armbian-sc8280xp-edge-patches.list packaging/inputs.lock \
+    packaging/qnn | grep -q .; then
     changed=1
 fi
 printf 'REFRESH_CHANGED=%s\n' "$changed" >> "$env_file"
