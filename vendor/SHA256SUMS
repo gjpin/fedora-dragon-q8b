@@ -33,7 +33,7 @@ e00c1878dd253fdb705bd4c38b37e489a3c67f23a0c514089df750114fdd83d1  vendor/armbian
 2addd55d9e1cd3f0c83b214d2b86d1320dc95144a106a67d039b43b142758f50  vendor/armbian/sc8280xp-edge-patches/0034-net-phy-qca808x-dt-led-preset-modes.patch
 3c814387d2cdedbbd64966311d9b74e8323e2c06c53ee8a765ad1fc871f471e9  vendor/armbian/sc8280xp-edge-patches/0035-soundwire-qcom-only-reject-over-declared-port-counts.patch
 4e3fdce8b8ed715579f51778b19d88617f508d0c4f431bd190fde217d6ba4947  vendor/qualcomm/fastrpc/fastrpc-1.0.6.tar.gz
-68f7ac7d334e9e7e879f8664d3deecea8f07403a93a2f43a0632580b8d0309da  vendor/radxa/alsa/alsa-ucm-conf-1.2.16.1-radxa-1.tar.gz
-8fb4980083d7f04089fb5b668a775af01fe42668920e16ca2c7ee4ba960e72be  vendor/radxa/firmware/radxa-firmware-555ef7e52a0c6fa3153172e31a95ffd3853103c8.tar.gz
+b1eeb51bd2f0d538c35dbabf23ecc9a3db6d4bbc283a5696a1d91718cde9d52e  vendor/radxa/alsa/alsa-ucm-conf-1.2.16.1-radxa-2.tar.gz
+f5f2e0ba3da56bb57d756a910323c62089d66e5278bd52a24e3feb01dccf4706  vendor/radxa/firmware/radxa-firmware-f19f2c4d5f1349ccffa95adbc28ef59971ed5b56.tar.gz
 61f052f6597f194909634b3a6ccf611bc960b85e6e6d0ef42d165eb016d38566  vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts
-9f2bd6703b766df72506b07f2340d3d074565a3afcaac096672929e4b3ff206a  vendor/radxa/overlays/radxa-overlays-c59d1fba3a22cf6d1062997b0c02b729d0158023.tar.gz
+9fdcab77dde51890e2098e74f18ed687b7ef98f9ac27e2b17f52d0de62e53459  vendor/radxa/overlays/radxa-overlays-788153020eb3ae4dfd7bde412bdaaf97715f0757.tar.gz
