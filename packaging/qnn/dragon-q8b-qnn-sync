@@ -11,9 +11,9 @@ qnn_install_tmp=
 
 # Fallbacks used when running from git without the packaged conf. RPM builds
 # replace these from config/dragon-q8b.env.
-QAIRT_VERSION=2.51.0.260929
-QAIRT_DOWNLOAD_URL=https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.51.0.260929/v2.51.0.260929.zip
-QAIRT_ARCHIVE_SHA256=9b4ca798902f02a2543857f5de4d233830c044d19701b92fc66a12fdc292211f
+QAIRT_VERSION=2.51.40.260930
+QAIRT_DOWNLOAD_URL=https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.51.40.260930/v2.51.40.260930.zip
+QAIRT_ARCHIVE_SHA256=aa5acc79d2c3cedc502937b57557ae0155ae75b67e93553154333d4933f3c959
 QAIRT_LICENSE_SHA256=ec1dccfdcba5c6e64126e84199b8362bf4999107bfa567ebe831dbb4c461692b
 QAIRT_TARGET=aarch64-oe-linux-gcc11.2
 QAIRT_DSP_ARCH=68
