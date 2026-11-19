@@ -1,6 +1,6 @@
 schema: 3
 radxa_kernel_repo: "https://github.com/radxa/kernel.git"
-radxa_kernel_ref: "3b3b3139488b48407c007bb2370e5a37859211ba"
+radxa_kernel_ref: "d054b30afa13c93b0488f3eed1b8a8927c7f4fc1"
 radxa_kernel_branch: "linux-7.0.11"
 radxa_kernel_dts_path: "vendor/radxa/kernel/sc8280xp-radxa-dragon-q8b.dts"
 radxa_kernel_dts_sha256: "61f052f6597f194909634b3a6ccf611bc960b85e6e6d0ef42d165eb016d38566"
